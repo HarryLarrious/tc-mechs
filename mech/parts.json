@@ -1,0 +1,1959 @@
+{
+ "frame": "+X left, +Y up, +Z forward; meters; origin on the ground midway between the hips",
+ "model_scale": 0.5,
+ "placement": "item display at the mech origin; matrix = mech * segment(pose) * translate(pivot) * rotate_xyz(rest). aim parts instead sit at their posed pivot with local +Y turned toward their posed links.to point. The pack scales the half-size models back to 1:1.",
+ "hip_x": 0.75,
+ "segments": [
+  "pelvis",
+  "thigh_l",
+  "shin_l",
+  "foot_l",
+  "thigh_r",
+  "shin_r",
+  "foot_r"
+ ],
+ "joints": {
+  "hip_l": {
+   "pivot": [
+    0.75,
+    3.0,
+    0.0
+   ],
+   "axis": "x",
+   "parent": "pelvis",
+   "child": "thigh_l",
+   "range": [
+    -45,
+    42
+   ]
+  },
+  "knee_l": {
+   "pivot": [
+    0.75,
+    1.95,
+    0.55
+   ],
+   "axis": "x",
+   "parent": "thigh_l",
+   "child": "shin_l",
+   "range": [
+    -45,
+    45
+   ]
+  },
+  "ankle_l": {
+   "pivot": [
+    0.75,
+    0.62,
+    -0.3
+   ],
+   "axis": "x",
+   "parent": "shin_l",
+   "child": "foot_l",
+   "range": [
+    -43,
+    42
+   ]
+  },
+  "hip_r": {
+   "pivot": [
+    -0.75,
+    3.0,
+    0.0
+   ],
+   "axis": "x",
+   "parent": "pelvis",
+   "child": "thigh_r",
+   "range": [
+    -45,
+    42
+   ]
+  },
+  "knee_r": {
+   "pivot": [
+    -0.75,
+    1.95,
+    0.55
+   ],
+   "axis": "x",
+   "parent": "thigh_r",
+   "child": "shin_r",
+   "range": [
+    -45,
+    45
+   ]
+  },
+  "ankle_r": {
+   "pivot": [
+    -0.75,
+    0.62,
+    -0.3
+   ],
+   "axis": "x",
+   "parent": "shin_r",
+   "child": "foot_r",
+   "range": [
+    -43,
+    42
+   ]
+  }
+ },
+ "anims": {
+  "fixed": "rigid with its segment",
+  "aim": "at its pivot on its segment, local +Y aimed at links.to on links.to_segment (pistons)"
+ },
+ "tints": {
+  "0": "armor paint",
+  "1": "accent (stripes, trims, air tanks)"
+ },
+ "tint_defaults": [
+  "#8a9099",
+  "#e0761c"
+ ],
+ "damage_state": "custom_model_data string 0 = \"damaged\" swaps to the _damaged model",
+ "total_mass": 3501.2,
+ "parts": [
+  {
+   "id": "pelvis",
+   "label": "Pelvis frame (crossbeam and keel)",
+   "group": "structure",
+   "parent": null,
+   "segment": "pelvis",
+   "item_model": "mech:pelvis/pelvis",
+   "pivot": [
+    0.0,
+    3.6,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 420,
+   "hp": 500,
+   "on_break": "fail",
+   "effect": "Cracks: both hips sag and lose torque; at 0 the mech collapses",
+   "shield": [
+    "pelvis_armor"
+   ],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -1.12,
+     -0.62,
+     -0.302
+    ],
+    [
+     1.12,
+     0.142,
+     0.302
+    ]
+   ],
+   "links": {},
+   "elements": 29
+  },
+  {
+   "id": "waist_ring",
+   "label": "Waist slewing ring and drive motor",
+   "group": "actuator",
+   "parent": "pelvis",
+   "segment": "pelvis",
+   "item_model": "mech:pelvis/waist_ring",
+   "pivot": [
+    0.0,
+    3.6,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 140,
+   "hp": 220,
+   "on_break": "fail",
+   "effect": "Jams with damage: the torso turns slower; at 0 it locks facing where it was",
+   "shield": [
+    "rear_armor"
+   ],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.49,
+     0.1,
+     -0.721
+    ],
+    [
+     0.49,
+     0.405,
+     0.49
+    ]
+   ],
+   "links": {},
+   "elements": 124
+  },
+  {
+   "id": "pelvis_armor",
+   "label": "Pelvis armor (front plates, flange covers)",
+   "group": "armor",
+   "parent": "pelvis",
+   "segment": "pelvis",
+   "item_model": "mech:pelvis/pelvis_armor",
+   "pivot": [
+    0.0,
+    3.6,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 90,
+   "hp": 260,
+   "on_break": "detach",
+   "effect": "Torn off: the pelvis frame and keel take hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -1.061,
+     -0.703,
+     -0.3
+    ],
+    [
+     1.061,
+     0.216,
+     0.491
+    ]
+   ],
+   "links": {},
+   "elements": 13
+  },
+  {
+   "id": "power_pack",
+   "label": "Power pack (battery and cables)",
+   "group": "power",
+   "parent": "pelvis",
+   "segment": "pelvis",
+   "item_model": "mech:pelvis/power_pack",
+   "pivot": [
+    0.0,
+    3.6,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 260,
+   "hp": 180,
+   "on_break": "fail",
+   "effect": "Loses charge with HP: every motor weakens; at 0 only the air pistons move the legs",
+   "shield": [
+    "rear_armor"
+   ],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -1.164,
+     -0.4,
+     -0.752
+    ],
+    [
+     1.164,
+     0.12,
+     -0.113
+    ]
+   ],
+   "links": {},
+   "elements": 19
+  },
+  {
+   "id": "compressor",
+   "label": "Air compressor (feeds both leg tanks)",
+   "group": "air",
+   "parent": "power_pack",
+   "segment": "pelvis",
+   "item_model": "mech:pelvis/compressor",
+   "pivot": [
+    0.0,
+    3.6,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 45,
+   "hp": 90,
+   "on_break": "fail",
+   "effect": "Stops pumping: the leg tanks run down as the pistons work",
+   "shield": [
+    "power_pack"
+   ],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.497,
+     -0.661,
+     -0.62
+    ],
+    [
+     0.497,
+     -0.116,
+     -0.24
+    ]
+   ],
+   "links": {},
+   "elements": 44
+  },
+  {
+   "id": "rear_armor",
+   "label": "Rear armor (power pack cover)",
+   "group": "armor",
+   "parent": "pelvis",
+   "segment": "pelvis",
+   "item_model": "mech:pelvis/rear_armor",
+   "pivot": [
+    0.0,
+    3.6,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 45,
+   "hp": 180,
+   "on_break": "detach",
+   "effect": "Torn off: the power pack and waist motor take hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.45,
+     -0.3,
+     -0.871
+    ],
+    [
+     0.45,
+     0.181,
+     -0.3
+    ]
+   ],
+   "links": {},
+   "elements": 6
+  },
+  {
+   "id": "hip_mount_l",
+   "label": "Hip mount (flange, yoke, piston anchor) (left)",
+   "group": "structure",
+   "parent": "pelvis",
+   "segment": "pelvis",
+   "item_model": "mech:leg/hip_mount_l",
+   "pivot": [
+    0.75,
+    3.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 120,
+   "hp": 400,
+   "on_break": "fail",
+   "effect": "Cracks: the whole leg sags and the hip motor loses torque; at 0 the leg is lost",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.365,
+     -0.203,
+     -0.692
+    ],
+    [
+     0.3,
+     0.53,
+     0.3
+    ]
+   ],
+   "links": {},
+   "elements": 58
+  },
+  {
+   "id": "hip_motor_l",
+   "label": "Hip motor (servo, 4-fin housing) (left)",
+   "group": "actuator",
+   "parent": "hip_mount_l",
+   "segment": "pelvis",
+   "item_model": "mech:leg/hip_motor_l",
+   "pivot": [
+    0.75,
+    3.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 85,
+   "hp": 160,
+   "on_break": "fail",
+   "effect": "Loses torque with HP: slower, shorter strides; at 0 the hip only moves on its piston",
+   "shield": [
+    "hip_guard_l"
+   ],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     0.0,
+     -0.327,
+     -0.327
+    ],
+    [
+     0.46,
+     0.456,
+     0.327
+    ]
+   ],
+   "links": {},
+   "elements": 80
+  },
+  {
+   "id": "hip_guard_l",
+   "label": "Hip armor (tasset and motor cap) (left)",
+   "group": "armor",
+   "parent": "hip_mount_l",
+   "segment": "pelvis",
+   "item_model": "mech:leg/hip_guard_l",
+   "pivot": [
+    0.75,
+    3.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 40,
+   "hp": 140,
+   "on_break": "detach",
+   "effect": "Torn off: the hip motor takes hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.26,
+     -0.131,
+     -0.31
+    ],
+    [
+     0.6,
+     0.514,
+     0.531
+    ]
+   ],
+   "links": {},
+   "elements": 7
+  },
+  {
+   "id": "air_tank_l",
+   "label": "Air tank and valve block (left)",
+   "group": "air",
+   "parent": "hip_mount_l",
+   "segment": "pelvis",
+   "item_model": "mech:leg/air_tank_l",
+   "pivot": [
+    0.75,
+    3.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 30,
+   "hp": 60,
+   "on_break": "detach",
+   "effect": "Ruptures: every piston loses pressure and the leg can only use its motors",
+   "shield": [
+    "hip_mount_l"
+   ],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.29,
+     0.158,
+     -0.642
+    ],
+    [
+     0.29,
+     0.77,
+     -0.296
+    ]
+   ],
+   "links": {},
+   "elements": 36
+  },
+  {
+   "id": "thigh_l",
+   "label": "Thigh frame (left)",
+   "group": "structure",
+   "parent": "hip_mount_l",
+   "segment": "thigh_l",
+   "item_model": "mech:leg/thigh_l",
+   "pivot": [
+    0.75,
+    3.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 260,
+   "hp": 320,
+   "on_break": "fail",
+   "effect": "Bends: the knee runs out of line and the stride shortens; at 0 the leg collapses",
+   "shield": [
+    "thigh_armor_l"
+   ],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.315,
+     -1.214,
+     -0.193
+    ],
+    [
+     0.424,
+     0.193,
+     0.714
+    ]
+   ],
+   "links": {},
+   "elements": 55
+  },
+  {
+   "id": "thigh_armor_l",
+   "label": "Thigh armor (left)",
+   "group": "armor",
+   "parent": "thigh_l",
+   "segment": "thigh_l",
+   "item_model": "mech:leg/thigh_armor_l",
+   "pivot": [
+    0.75,
+    3.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 70,
+   "hp": 200,
+   "on_break": "detach",
+   "effect": "Torn off: the thigh frame and its knee piston mount take hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.22,
+     -0.933,
+     0.006
+    ],
+    [
+     0.22,
+     -0.077,
+     0.66
+    ]
+   ],
+   "links": {},
+   "elements": 18
+  },
+  {
+   "id": "knee_motor_l",
+   "label": "Knee motor (servo) (left)",
+   "group": "actuator",
+   "parent": "thigh_l",
+   "segment": "thigh_l",
+   "item_model": "mech:leg/knee_motor_l",
+   "pivot": [
+    0.75,
+    1.95,
+    0.55
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 55,
+   "hp": 130,
+   "on_break": "fail",
+   "effect": "Loses torque with HP; at 0 the knee only moves on its piston",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.38,
+     -0.204,
+     -0.204
+    ],
+    [
+     0.0,
+     0.25,
+     0.204
+    ]
+   ],
+   "links": {},
+   "elements": 63
+  },
+  {
+   "id": "shin_l",
+   "label": "Shin frame (left)",
+   "group": "structure",
+   "parent": "thigh_l",
+   "segment": "shin_l",
+   "item_model": "mech:leg/shin_l",
+   "pivot": [
+    0.75,
+    1.95,
+    0.55
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 210,
+   "hp": 300,
+   "on_break": "fail",
+   "effect": "Bends: the foot lands out of line; at 0 the leg collapses",
+   "shield": [
+    "shin_armor_l",
+    "knee_guard_l"
+   ],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.19,
+     -1.465,
+     -0.985
+    ],
+    [
+     0.434,
+     0.145,
+     0.145
+    ]
+   ],
+   "links": {},
+   "elements": 54
+  },
+  {
+   "id": "knee_guard_l",
+   "label": "Knee armor (left)",
+   "group": "armor",
+   "parent": "shin_l",
+   "segment": "shin_l",
+   "item_model": "mech:leg/knee_guard_l",
+   "pivot": [
+    0.75,
+    1.95,
+    0.55
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 30,
+   "hp": 160,
+   "on_break": "detach",
+   "effect": "Torn off: the knee hub and motor take hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.2,
+     -0.205,
+     0.043
+    ],
+    [
+     0.2,
+     0.245,
+     0.276
+    ]
+   ],
+   "links": {},
+   "elements": 16
+  },
+  {
+   "id": "shin_armor_l",
+   "label": "Shin armor (greave) (left)",
+   "group": "armor",
+   "parent": "shin_l",
+   "segment": "shin_l",
+   "item_model": "mech:leg/shin_armor_l",
+   "pivot": [
+    0.75,
+    1.95,
+    0.55
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 60,
+   "hp": 200,
+   "on_break": "detach",
+   "effect": "Torn off: the shin frame takes hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.205,
+     -1.293,
+     -0.694
+    ],
+    [
+     0.205,
+     -0.331,
+     0.013
+    ]
+   ],
+   "links": {},
+   "elements": 6
+  },
+  {
+   "id": "ankle_motor_l",
+   "label": "Ankle motor (servo) (left)",
+   "group": "actuator",
+   "parent": "shin_l",
+   "segment": "shin_l",
+   "item_model": "mech:leg/ankle_motor_l",
+   "pivot": [
+    0.75,
+    0.62,
+    -0.3
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 30,
+   "hp": 100,
+   "on_break": "fail",
+   "effect": "Loses torque with HP: the foot slaps down; at 0 the ankle only moves on its piston",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.215,
+     -0.15,
+     -0.15
+    ],
+    [
+     0.0,
+     0.15,
+     0.15
+    ]
+   ],
+   "links": {},
+   "elements": 56
+  },
+  {
+   "id": "foot_l",
+   "label": "Foot (three toes and a heel spur) (left)",
+   "group": "structure",
+   "parent": "shin_l",
+   "segment": "foot_l",
+   "item_model": "mech:leg/foot_l",
+   "pivot": [
+    0.75,
+    0.62,
+    -0.3
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 150,
+   "hp": 260,
+   "on_break": "fail",
+   "effect": "Damaged toes cost grip and balance; at 0 the mech stumbles on every step",
+   "shield": [
+    "foot_armor_l"
+   ],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.524,
+     -0.664,
+     -0.423
+    ],
+    [
+     0.524,
+     0.432,
+     1.288
+    ]
+   ],
+   "links": {},
+   "elements": 49
+  },
+  {
+   "id": "foot_armor_l",
+   "label": "Foot armor (toe caps, instep) (left)",
+   "group": "armor",
+   "parent": "foot_l",
+   "segment": "foot_l",
+   "item_model": "mech:leg/foot_armor_l",
+   "pivot": [
+    0.75,
+    0.62,
+    -0.3
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 35,
+   "hp": 150,
+   "on_break": "detach",
+   "effect": "Torn off: the toes take hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.525,
+     -0.565,
+     0.142
+    ],
+    [
+     0.525,
+     0.041,
+     1.242
+    ]
+   ],
+   "links": {},
+   "elements": 13
+  },
+  {
+   "id": "hip_piston_cyl_l",
+   "label": "Hip piston cylinder (pelvis to thigh) (left)",
+   "group": "actuator",
+   "parent": "hip_mount_l",
+   "segment": "pelvis",
+   "item_model": "mech:leg/hip_piston_cyl_l",
+   "pivot": [
+    0.75,
+    3.3,
+    -0.6
+   ],
+   "rest": [
+    143.241,
+    0.0,
+    0.0
+   ],
+   "anim": "aim",
+   "mass": 22,
+   "hp": 90,
+   "on_break": "detach",
+   "effect": "Leaks: the joint loses its air assist and moves on its motor alone; broken off with its rod",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.092,
+     -0.055,
+     -0.092
+    ],
+    [
+     0.172,
+     0.773,
+     0.092
+    ]
+   ],
+   "links": {
+    "to": [
+     0.75,
+     2.4284,
+     0.051
+    ],
+    "to_segment": "thigh_l",
+    "rest_length": 1.0879
+   },
+   "elements": 41
+  },
+  {
+   "id": "hip_piston_rod_l",
+   "label": "Hip piston rod (left)",
+   "group": "actuator",
+   "parent": "hip_piston_cyl_l",
+   "segment": "thigh_l",
+   "item_model": "mech:leg/hip_piston_rod_l",
+   "pivot": [
+    0.75,
+    2.4284,
+    0.051
+   ],
+   "rest": [
+    -36.759,
+    0.0,
+    0.0
+   ],
+   "anim": "aim",
+   "mass": 8.8,
+   "hp": 90,
+   "on_break": "detach",
+   "effect": "Bends: the piston binds and the joint turns slower",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.04,
+     -0.051,
+     -0.051
+    ],
+    [
+     0.04,
+     0.653,
+     0.051
+    ]
+   ],
+   "links": {
+    "to": [
+     0.75,
+     3.3,
+     -0.6
+    ],
+    "to_segment": "pelvis",
+    "rest_length": 1.0879
+   },
+   "elements": 13
+  },
+  {
+   "id": "knee_piston_cyl_l",
+   "label": "Knee piston cylinder (thigh to shin, outboard) (left)",
+   "group": "actuator",
+   "parent": "thigh_l",
+   "segment": "thigh_l",
+   "item_model": "mech:leg/knee_piston_cyl_l",
+   "pivot": [
+    1.05,
+    2.6988,
+    0.3948
+   ],
+   "rest": [
+    174.885,
+    0.0,
+    0.0
+   ],
+   "anim": "aim",
+   "mass": 18,
+   "hp": 80,
+   "on_break": "detach",
+   "effect": "Leaks: the joint loses its air assist and moves on its motor alone; broken off with its rod",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.092,
+     -0.055,
+     -0.092
+    ],
+    [
+     0.172,
+     0.899,
+     0.092
+    ]
+   ],
+   "links": {
+    "to": [
+     1.05,
+     1.4055,
+     0.5106
+    ],
+    "to_segment": "shin_l",
+    "rest_length": 1.2985
+   },
+   "elements": 41
+  },
+  {
+   "id": "knee_piston_rod_l",
+   "label": "Knee piston rod (left)",
+   "group": "actuator",
+   "parent": "knee_piston_cyl_l",
+   "segment": "shin_l",
+   "item_model": "mech:leg/knee_piston_rod_l",
+   "pivot": [
+    1.05,
+    1.4055,
+    0.5106
+   ],
+   "rest": [
+    -5.115,
+    0.0,
+    0.0
+   ],
+   "anim": "aim",
+   "mass": 7.2,
+   "hp": 80,
+   "on_break": "detach",
+   "effect": "Bends: the piston binds and the joint turns slower",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.04,
+     -0.051,
+     -0.051
+    ],
+    [
+     0.04,
+     0.779,
+     0.051
+    ]
+   ],
+   "links": {
+    "to": [
+     1.05,
+     2.6988,
+     0.3948
+    ],
+    "to_segment": "thigh_l",
+    "rest_length": 1.2985
+   },
+   "elements": 13
+  },
+  {
+   "id": "ankle_piston_cyl_l",
+   "label": "Ankle piston cylinder (shin to heel) (left)",
+   "group": "actuator",
+   "parent": "shin_l",
+   "segment": "shin_l",
+   "item_model": "mech:leg/ankle_piston_cyl_l",
+   "pivot": [
+    0.75,
+    1.7207,
+    0.1661
+   ],
+   "rest": [
+    -134.433,
+    0.0,
+    0.0
+   ],
+   "anim": "aim",
+   "mass": 14,
+   "hp": 70,
+   "on_break": "detach",
+   "effect": "Leaks: the joint loses its air assist and moves on its motor alone; broken off with its rod",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.092,
+     -0.055,
+     -0.092
+    ],
+    [
+     0.172,
+     0.78,
+     0.092
+    ]
+   ],
+   "links": {
+    "to": [
+     0.75,
+     0.95,
+     -0.62
+    ],
+    "to_segment": "foot_l",
+    "rest_length": 1.1008
+   },
+   "elements": 41
+  },
+  {
+   "id": "ankle_piston_rod_l",
+   "label": "Ankle piston rod (left)",
+   "group": "actuator",
+   "parent": "ankle_piston_cyl_l",
+   "segment": "foot_l",
+   "item_model": "mech:leg/ankle_piston_rod_l",
+   "pivot": [
+    0.75,
+    0.95,
+    -0.62
+   ],
+   "rest": [
+    45.567,
+    0.0,
+    0.0
+   ],
+   "anim": "aim",
+   "mass": 5.6000000000000005,
+   "hp": 70,
+   "on_break": "detach",
+   "effect": "Bends: the piston binds and the joint turns slower",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.04,
+     -0.051,
+     -0.051
+    ],
+    [
+     0.04,
+     0.66,
+     0.051
+    ]
+   ],
+   "links": {
+    "to": [
+     0.75,
+     1.7207,
+     0.1661
+    ],
+    "to_segment": "shin_l",
+    "rest_length": 1.1008
+   },
+   "elements": 13
+  },
+  {
+   "id": "hip_mount_r",
+   "label": "Hip mount (flange, yoke, piston anchor) (right)",
+   "group": "structure",
+   "parent": "pelvis",
+   "segment": "pelvis",
+   "item_model": "mech:leg/hip_mount_r",
+   "pivot": [
+    -0.75,
+    3.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 120,
+   "hp": 400,
+   "on_break": "fail",
+   "effect": "Cracks: the whole leg sags and the hip motor loses torque; at 0 the leg is lost",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.3,
+     -0.203,
+     -0.692
+    ],
+    [
+     0.365,
+     0.53,
+     0.3
+    ]
+   ],
+   "links": {},
+   "elements": 58
+  },
+  {
+   "id": "hip_motor_r",
+   "label": "Hip motor (servo, 4-fin housing) (right)",
+   "group": "actuator",
+   "parent": "hip_mount_r",
+   "segment": "pelvis",
+   "item_model": "mech:leg/hip_motor_r",
+   "pivot": [
+    -0.75,
+    3.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 85,
+   "hp": 160,
+   "on_break": "fail",
+   "effect": "Loses torque with HP: slower, shorter strides; at 0 the hip only moves on its piston",
+   "shield": [
+    "hip_guard_r"
+   ],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.46,
+     -0.327,
+     -0.327
+    ],
+    [
+     0.0,
+     0.456,
+     0.327
+    ]
+   ],
+   "links": {},
+   "elements": 80
+  },
+  {
+   "id": "hip_guard_r",
+   "label": "Hip armor (tasset and motor cap) (right)",
+   "group": "armor",
+   "parent": "hip_mount_r",
+   "segment": "pelvis",
+   "item_model": "mech:leg/hip_guard_r",
+   "pivot": [
+    -0.75,
+    3.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 40,
+   "hp": 140,
+   "on_break": "detach",
+   "effect": "Torn off: the hip motor takes hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.6,
+     -0.131,
+     -0.31
+    ],
+    [
+     0.26,
+     0.514,
+     0.531
+    ]
+   ],
+   "links": {},
+   "elements": 7
+  },
+  {
+   "id": "air_tank_r",
+   "label": "Air tank and valve block (right)",
+   "group": "air",
+   "parent": "hip_mount_r",
+   "segment": "pelvis",
+   "item_model": "mech:leg/air_tank_r",
+   "pivot": [
+    -0.75,
+    3.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 30,
+   "hp": 60,
+   "on_break": "detach",
+   "effect": "Ruptures: every piston loses pressure and the leg can only use its motors",
+   "shield": [
+    "hip_mount_r"
+   ],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.29,
+     0.158,
+     -0.642
+    ],
+    [
+     0.29,
+     0.77,
+     -0.296
+    ]
+   ],
+   "links": {},
+   "elements": 36
+  },
+  {
+   "id": "thigh_r",
+   "label": "Thigh frame (right)",
+   "group": "structure",
+   "parent": "hip_mount_r",
+   "segment": "thigh_r",
+   "item_model": "mech:leg/thigh_r",
+   "pivot": [
+    -0.75,
+    3.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 260,
+   "hp": 320,
+   "on_break": "fail",
+   "effect": "Bends: the knee runs out of line and the stride shortens; at 0 the leg collapses",
+   "shield": [
+    "thigh_armor_r"
+   ],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.424,
+     -1.214,
+     -0.193
+    ],
+    [
+     0.315,
+     0.193,
+     0.714
+    ]
+   ],
+   "links": {},
+   "elements": 55
+  },
+  {
+   "id": "thigh_armor_r",
+   "label": "Thigh armor (right)",
+   "group": "armor",
+   "parent": "thigh_r",
+   "segment": "thigh_r",
+   "item_model": "mech:leg/thigh_armor_r",
+   "pivot": [
+    -0.75,
+    3.0,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 70,
+   "hp": 200,
+   "on_break": "detach",
+   "effect": "Torn off: the thigh frame and its knee piston mount take hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.22,
+     -0.933,
+     0.006
+    ],
+    [
+     0.22,
+     -0.077,
+     0.66
+    ]
+   ],
+   "links": {},
+   "elements": 18
+  },
+  {
+   "id": "knee_motor_r",
+   "label": "Knee motor (servo) (right)",
+   "group": "actuator",
+   "parent": "thigh_r",
+   "segment": "thigh_r",
+   "item_model": "mech:leg/knee_motor_r",
+   "pivot": [
+    -0.75,
+    1.95,
+    0.55
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 55,
+   "hp": 130,
+   "on_break": "fail",
+   "effect": "Loses torque with HP; at 0 the knee only moves on its piston",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     0.0,
+     -0.204,
+     -0.204
+    ],
+    [
+     0.38,
+     0.25,
+     0.204
+    ]
+   ],
+   "links": {},
+   "elements": 63
+  },
+  {
+   "id": "shin_r",
+   "label": "Shin frame (right)",
+   "group": "structure",
+   "parent": "thigh_r",
+   "segment": "shin_r",
+   "item_model": "mech:leg/shin_r",
+   "pivot": [
+    -0.75,
+    1.95,
+    0.55
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 210,
+   "hp": 300,
+   "on_break": "fail",
+   "effect": "Bends: the foot lands out of line; at 0 the leg collapses",
+   "shield": [
+    "shin_armor_r",
+    "knee_guard_r"
+   ],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.434,
+     -1.465,
+     -0.985
+    ],
+    [
+     0.19,
+     0.145,
+     0.145
+    ]
+   ],
+   "links": {},
+   "elements": 54
+  },
+  {
+   "id": "knee_guard_r",
+   "label": "Knee armor (right)",
+   "group": "armor",
+   "parent": "shin_r",
+   "segment": "shin_r",
+   "item_model": "mech:leg/knee_guard_r",
+   "pivot": [
+    -0.75,
+    1.95,
+    0.55
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 30,
+   "hp": 160,
+   "on_break": "detach",
+   "effect": "Torn off: the knee hub and motor take hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.2,
+     -0.205,
+     0.043
+    ],
+    [
+     0.2,
+     0.245,
+     0.276
+    ]
+   ],
+   "links": {},
+   "elements": 16
+  },
+  {
+   "id": "shin_armor_r",
+   "label": "Shin armor (greave) (right)",
+   "group": "armor",
+   "parent": "shin_r",
+   "segment": "shin_r",
+   "item_model": "mech:leg/shin_armor_r",
+   "pivot": [
+    -0.75,
+    1.95,
+    0.55
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 60,
+   "hp": 200,
+   "on_break": "detach",
+   "effect": "Torn off: the shin frame takes hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.205,
+     -1.293,
+     -0.694
+    ],
+    [
+     0.205,
+     -0.331,
+     0.013
+    ]
+   ],
+   "links": {},
+   "elements": 6
+  },
+  {
+   "id": "ankle_motor_r",
+   "label": "Ankle motor (servo) (right)",
+   "group": "actuator",
+   "parent": "shin_r",
+   "segment": "shin_r",
+   "item_model": "mech:leg/ankle_motor_r",
+   "pivot": [
+    -0.75,
+    0.62,
+    -0.3
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 30,
+   "hp": 100,
+   "on_break": "fail",
+   "effect": "Loses torque with HP: the foot slaps down; at 0 the ankle only moves on its piston",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     0.0,
+     -0.15,
+     -0.15
+    ],
+    [
+     0.215,
+     0.15,
+     0.15
+    ]
+   ],
+   "links": {},
+   "elements": 56
+  },
+  {
+   "id": "foot_r",
+   "label": "Foot (three toes and a heel spur) (right)",
+   "group": "structure",
+   "parent": "shin_r",
+   "segment": "foot_r",
+   "item_model": "mech:leg/foot_r",
+   "pivot": [
+    -0.75,
+    0.62,
+    -0.3
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 150,
+   "hp": 260,
+   "on_break": "fail",
+   "effect": "Damaged toes cost grip and balance; at 0 the mech stumbles on every step",
+   "shield": [
+    "foot_armor_r"
+   ],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.524,
+     -0.664,
+     -0.423
+    ],
+    [
+     0.524,
+     0.432,
+     1.288
+    ]
+   ],
+   "links": {},
+   "elements": 49
+  },
+  {
+   "id": "foot_armor_r",
+   "label": "Foot armor (toe caps, instep) (right)",
+   "group": "armor",
+   "parent": "foot_r",
+   "segment": "foot_r",
+   "item_model": "mech:leg/foot_armor_r",
+   "pivot": [
+    -0.75,
+    0.62,
+    -0.3
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 35,
+   "hp": 150,
+   "on_break": "detach",
+   "effect": "Torn off: the toes take hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.525,
+     -0.565,
+     0.142
+    ],
+    [
+     0.525,
+     0.041,
+     1.242
+    ]
+   ],
+   "links": {},
+   "elements": 13
+  },
+  {
+   "id": "hip_piston_cyl_r",
+   "label": "Hip piston cylinder (pelvis to thigh) (right)",
+   "group": "actuator",
+   "parent": "hip_mount_r",
+   "segment": "pelvis",
+   "item_model": "mech:leg/hip_piston_cyl_r",
+   "pivot": [
+    -0.75,
+    3.3,
+    -0.6
+   ],
+   "rest": [
+    143.241,
+    0.0,
+    0.0
+   ],
+   "anim": "aim",
+   "mass": 22,
+   "hp": 90,
+   "on_break": "detach",
+   "effect": "Leaks: the joint loses its air assist and moves on its motor alone; broken off with its rod",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.172,
+     -0.055,
+     -0.092
+    ],
+    [
+     0.092,
+     0.773,
+     0.092
+    ]
+   ],
+   "links": {
+    "to": [
+     -0.75,
+     2.4284,
+     0.051
+    ],
+    "to_segment": "thigh_r",
+    "rest_length": 1.0879
+   },
+   "elements": 41
+  },
+  {
+   "id": "hip_piston_rod_r",
+   "label": "Hip piston rod (right)",
+   "group": "actuator",
+   "parent": "hip_piston_cyl_r",
+   "segment": "thigh_r",
+   "item_model": "mech:leg/hip_piston_rod_r",
+   "pivot": [
+    -0.75,
+    2.4284,
+    0.051
+   ],
+   "rest": [
+    -36.759,
+    0.0,
+    0.0
+   ],
+   "anim": "aim",
+   "mass": 8.8,
+   "hp": 90,
+   "on_break": "detach",
+   "effect": "Bends: the piston binds and the joint turns slower",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.04,
+     -0.051,
+     -0.051
+    ],
+    [
+     0.04,
+     0.653,
+     0.051
+    ]
+   ],
+   "links": {
+    "to": [
+     -0.75,
+     3.3,
+     -0.6
+    ],
+    "to_segment": "pelvis",
+    "rest_length": 1.0879
+   },
+   "elements": 13
+  },
+  {
+   "id": "knee_piston_cyl_r",
+   "label": "Knee piston cylinder (thigh to shin, outboard) (right)",
+   "group": "actuator",
+   "parent": "thigh_r",
+   "segment": "thigh_r",
+   "item_model": "mech:leg/knee_piston_cyl_r",
+   "pivot": [
+    -1.05,
+    2.6988,
+    0.3948
+   ],
+   "rest": [
+    174.885,
+    0.0,
+    0.0
+   ],
+   "anim": "aim",
+   "mass": 18,
+   "hp": 80,
+   "on_break": "detach",
+   "effect": "Leaks: the joint loses its air assist and moves on its motor alone; broken off with its rod",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.172,
+     -0.055,
+     -0.092
+    ],
+    [
+     0.092,
+     0.899,
+     0.092
+    ]
+   ],
+   "links": {
+    "to": [
+     -1.05,
+     1.4055,
+     0.5106
+    ],
+    "to_segment": "shin_r",
+    "rest_length": 1.2985
+   },
+   "elements": 41
+  },
+  {
+   "id": "knee_piston_rod_r",
+   "label": "Knee piston rod (right)",
+   "group": "actuator",
+   "parent": "knee_piston_cyl_r",
+   "segment": "shin_r",
+   "item_model": "mech:leg/knee_piston_rod_r",
+   "pivot": [
+    -1.05,
+    1.4055,
+    0.5106
+   ],
+   "rest": [
+    -5.115,
+    0.0,
+    0.0
+   ],
+   "anim": "aim",
+   "mass": 7.2,
+   "hp": 80,
+   "on_break": "detach",
+   "effect": "Bends: the piston binds and the joint turns slower",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.04,
+     -0.051,
+     -0.051
+    ],
+    [
+     0.04,
+     0.779,
+     0.051
+    ]
+   ],
+   "links": {
+    "to": [
+     -1.05,
+     2.6988,
+     0.3948
+    ],
+    "to_segment": "thigh_r",
+    "rest_length": 1.2985
+   },
+   "elements": 13
+  },
+  {
+   "id": "ankle_piston_cyl_r",
+   "label": "Ankle piston cylinder (shin to heel) (right)",
+   "group": "actuator",
+   "parent": "shin_r",
+   "segment": "shin_r",
+   "item_model": "mech:leg/ankle_piston_cyl_r",
+   "pivot": [
+    -0.75,
+    1.7207,
+    0.1661
+   ],
+   "rest": [
+    -134.433,
+    0.0,
+    0.0
+   ],
+   "anim": "aim",
+   "mass": 14,
+   "hp": 70,
+   "on_break": "detach",
+   "effect": "Leaks: the joint loses its air assist and moves on its motor alone; broken off with its rod",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.172,
+     -0.055,
+     -0.092
+    ],
+    [
+     0.092,
+     0.78,
+     0.092
+    ]
+   ],
+   "links": {
+    "to": [
+     -0.75,
+     0.95,
+     -0.62
+    ],
+    "to_segment": "foot_r",
+    "rest_length": 1.1008
+   },
+   "elements": 41
+  },
+  {
+   "id": "ankle_piston_rod_r",
+   "label": "Ankle piston rod (right)",
+   "group": "actuator",
+   "parent": "ankle_piston_cyl_r",
+   "segment": "foot_r",
+   "item_model": "mech:leg/ankle_piston_rod_r",
+   "pivot": [
+    -0.75,
+    0.95,
+    -0.62
+   ],
+   "rest": [
+    45.567,
+    0.0,
+    0.0
+   ],
+   "anim": "aim",
+   "mass": 5.6000000000000005,
+   "hp": 70,
+   "on_break": "detach",
+   "effect": "Bends: the piston binds and the joint turns slower",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.04,
+     -0.051,
+     -0.051
+    ],
+    [
+     0.04,
+     0.66,
+     0.051
+    ]
+   ],
+   "links": {
+    "to": [
+     -0.75,
+     1.7207,
+     0.1661
+    ],
+    "to_segment": "shin_r",
+    "rest_length": 1.1008
+   },
+   "elements": 13
+  }
+ ]
+}
