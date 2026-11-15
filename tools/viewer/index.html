@@ -33,7 +33,9 @@
 <div id="side">
   <div id="controls">
     <div id="joints" style="display:grid; gap:4px"></div>
-    <label><input id="walk" type="checkbox"> Walk cycle <input id="level" type="checkbox" checked> Keep feet level</label>
+    <label><input id="walk" type="checkbox"> Walk (W/S move, A/D turn) <input id="level" type="checkbox" checked> Feet level</label>
+    <label>Course <select id="course"><option value="flat">Flat</option><option value="steps">Steps (1 then 2 blocks)</option><option value="stairs">Stairs</option><option value="wall">3-block wall</option><option value="bar">Bar at turret height</option><option value="pillars">Pillars</option></select></label>
+    <div id="gaitInfo" style="color:var(--dim)"></div>
     <label><input id="sweep" type="checkbox"> Turret sweep <input id="fire" type="checkbox"> Spin barrels</label>
     <label>Explode <input id="explode" type="range" min="0" max="1" step="0.01" value="0"></label>
     <label><input id="damaged" type="checkbox"> Damaged models <input id="player" type="checkbox" checked> Pilot</label>
@@ -71,7 +73,7 @@ controls.target.copy(TARGET);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x404040, 1.5));
 const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(4, 7, 5); scene.add(sun);
 const fill = new THREE.DirectionalLight(0xaabbff, 0.5); fill.position.set(-5, 2, -3); scene.add(fill);
-scene.add(new THREE.GridHelper(Math.ceil(10 * K), Math.ceil(10 * K), 0x3a3f48, 0x262a31));  // 1 m squares
+scene.add(new THREE.GridHelper(200, 200, 0x3a3f48, 0x262a31));  // 1 m squares
 // A player sitting in the pilot's chair, for scale: Minecraft's sitting pose
 // with the hips on the seat, leaning back with the chair, eyes 1.03 m from
 // the hips along the back.
@@ -147,8 +149,12 @@ function rotAbout(p, deg, axis) {
   return t.multiply(r).multiply(new THREE.Matrix4().makeTranslation(-p[0], -p[1], -p[2]));
 }
 let spin = 0;  // heavy barrel cluster angle
+// Where the mech stands: body position on the ground and heading (yaw,
+// Minecraft's convention: forward = (-sin yaw, 0, cos yaw)), plus the body's
+// height offset from the gait.
+const body = { x: 0, z: 0, yaw: 0, y: 0 };
 function segMatrices() {
-  const out = { pelvis: new THREE.Matrix4().makeTranslation(0, bob, 0) };
+  const out = { pelvis: new THREE.Matrix4().makeTranslation(body.x, body.y + bob, body.z).multiply(new THREE.Matrix4().makeRotationY(-body.yaw)) };
   for (const [j, J] of Object.entries(spec.joints)) out[J.child] = out[J.parent].clone().multiply(rotAbout(J.pivot, pose[j], J.axis));
   return out;
 }
@@ -163,6 +169,220 @@ function groundBody() {
   }
   bob = -low;
 }
+
+// ---------------------------------------------------------------- procedural walk
+// The same algorithm as tools/gait_check.py (the reference) and tc/gait.tc +
+// tc/terrain.tc. The gait's numbers: GAIT and PROBES in pack/src/mech_lib.py,
+// at real size.
+const g_ = spec.gait;
+const G = {
+  CROUCH: g_.crouch, SWING: g_.swing, LIFT: g_.lift, BOB: g_.bob, STEP: g_.step, SETTLE: g_.settle, LEAD: g_.lead,
+  MAX_SPEED: g_.max_speed, MAX_TURN: g_.max_turn, TOE: g_.toe, ACCEL: g_.accel, TURN_ACCEL: g_.turn_accel, AIM_RATE: g_.aim_rate,
+  MAX_RISE: g_.max_rise, UP: g_.probe_up, DOWN: g_.probe_down, CLIMB: g_.climb_rate, MARGIN: g_.margin, MAX_REACH: g_.max_reach,
+};
+const FOOT_SAMPLES = [[0, g_.foot_heel], [0, g_.foot_mid], [0, g_.foot_toe], [g_.foot_side, g_.foot_mid], [-g_.foot_side, g_.foot_mid]];
+const STEP_FRACTIONS = [1.0, 1.3, 0.7, 0.45, 0.2];
+const HIP = spec.joints.hip_l.pivot, KNEE = spec.joints.knee_l.pivot, ANKLE = spec.joints.ankle_l.pivot;
+const angYZ = (y, z) => Math.atan2(z, y);
+const wrapA = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+const T0 = [KNEE[1] - HIP[1], KNEE[2] - HIP[2]], S0 = [ANKLE[1] - KNEE[1], ANKLE[2] - KNEE[2]];
+const L1 = Math.hypot(...T0), L2 = Math.hypot(...S0);
+const PHI0 = wrapA(angYZ(...S0) - angYZ(...T0)), BEND = PHI0 > 0 ? 1 : -1;
+/** Hip and knee angles (degrees) that put the ankle at (dy, dz) from the hip. */
+function legIK(dy, dz) {
+  const d = Math.min(Math.max(Math.hypot(dy, dz), Math.abs(L1 - L2) + 0.01), L1 + L2 - 0.01);
+  const gamma = Math.acos((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2));
+  const alpha = Math.acos((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d));
+  const hip = wrapA(angYZ(dy, dz) - BEND * alpha - angYZ(...T0));
+  const knee = wrapA(BEND * (Math.PI - gamma) - PHI0);
+  return [hip * 180 / Math.PI, knee * 180 / Math.PI];
+}
+function legOk(dy, dz) {
+  if (Math.hypot(dy, dz) > G.MAX_REACH * (L1 + L2)) return false;
+  const [hip, knee] = legIK(dy, dz);
+  for (const [j, v] of [["hip_l", hip], ["knee_l", knee], ["ankle_l", -(hip + knee)]]) {
+    const [lo, hi] = spec.joints[j].range;
+    if (v < lo + G.MARGIN || v > hi - G.MARGIN) return false;
+  }
+  return true;
+}
+
+// The test course: block columns (tops) and loose blocks, drawn as boxes.
+const world = { tops: new Map(), blocks: new Set() };
+const solid = (x, y, z) => {
+  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+  return iy < (world.tops.get(ix + "," + iz) || 0) || world.blocks.has(ix + "," + iy + "," + iz);
+};
+function colTop(x, z, start, len) {
+  if (solid(x, start, z)) return start;
+  for (let y = Math.floor(start); y >= start - len - 1; y--) {
+    if (solid(x, y + 0.5, z)) { const top = y + 1; return top >= start - len ? top : null; }
+  }
+  return null;
+}
+const blockGroup = new THREE.Group(); scene.add(blockGroup);
+const blockMat = new THREE.MeshLambertMaterial({ color: 0x6b7280 });
+function buildCourse(name) {
+  world.tops.clear(); world.blocks.clear();
+  const col = (x, z, h) => world.tops.set(x + "," + z, h);
+  for (let x = -20; x <= 20; x++) {
+    if (name === "steps") { for (let z = 12; z < 30; z++) col(x, z, 1); for (let z = 30; z < 40; z++) col(x, z, 2); }
+    if (name === "stairs") for (let z = 9; z < 60; z++) col(x, z, Math.max(0, Math.floor((z - 9) / 3)));
+    if (name === "wall") for (let y = 0; y < 3; y++) col(x, 14, 3);
+    if (name === "bar") for (let y = 9; y < 11; y++) world.blocks.add(x + "," + y + ",16");
+  }
+  if (name === "pillars") for (const [x, z] of [[-3, 14], [4, 22], [-1, 30]]) for (let dx = 0; dx < 2; dx++) for (let dz = 0; dz < 2; dz++) col(x + dx, z + dz, 12);
+  blockGroup.clear();
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  for (const [k, h] of world.tops) { const [x, z] = k.split(",").map(Number); for (let y = 0; y < h; y++) { const m = new THREE.Mesh(geo, blockMat); m.position.set(x + 0.5, y + 0.5, z + 0.5); blockGroup.add(m); } }
+  for (const k of world.blocks) { const [x, y, z] = k.split(",").map(Number); const m = new THREE.Mesh(geo, blockMat); m.position.set(x + 0.5, y + 0.5, z + 0.5); blockGroup.add(m); }
+}
+
+const gait = { speed: 0, turn: 0, feet: null, swing: { l: null, r: null }, aimYaw: 0, keys: {}, gy: 0 };
+const fwdOf = yaw => [-Math.sin(yaw), Math.cos(yaw)];
+const leftOf = yaw => { const f = fwdOf(yaw); return [f[1], -f[0]]; };
+function footHome(side, lead, x = body.x, z = body.z, yaw = body.yaw) {
+  const f = fwdOf(yaw), l = leftOf(yaw), sx = (side === "l" ? 1 : -1) * HIP[0], fz = ANKLE[2] + lead;
+  return [x + l[0] * sx + f[0] * fz, z + l[1] * sx + f[1] * fz];
+}
+/** Ground under a foot with its ankle at (x, z), facing yaw, looked for near
+ * height `near`; null for none, a wall, or (with stand) the middle unsupported. */
+function groundUnder(x, z, yaw, near, stand = true) {
+  const f = fwdOf(yaw), l = leftOf(yaw);
+  let top = -Infinity; const tops = [];
+  for (const [sx, sz] of FOOT_SAMPLES) {
+    const t = colTop(x + l[0] * sx + f[0] * sz, z + l[1] * sx + f[1] * sz, near + G.UP, G.UP + G.DOWN);
+    if (t === null || t >= near + G.UP - 0.01) return null;
+    tops.push(t); top = Math.max(top, t);
+  }
+  if (stand && tops[1] < top - 0.3) return null;
+  return top;
+}
+/** Whether a swing from a to b passes over nothing higher than both ends: the
+ * ground along the foot's sweep (heel at the start to toe at the end, every
+ * half block, middle and both sides). */
+function pathClear(a, b, yaw) {
+  const top = Math.max(a[1], b[1]), f = fwdOf(yaw), l = leftOf(yaw);
+  const p0 = [a[0] + f[0] * g_.foot_heel, a[2] + f[1] * g_.foot_heel], p1 = [b[0] + f[0] * g_.foot_toe, b[2] + f[1] * g_.foot_toe];
+  const n = Math.max(1, Math.ceil(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) / 0.5));
+  for (let i = 0; i <= n; i++) {
+    const x = p0[0] + (p1[0] - p0[0]) * i / n, z = p0[1] + (p1[1] - p0[1]) * i / n;
+    for (const sx of [0, g_.foot_side, -g_.foot_side]) {
+      const t = colTop(x + l[0] * sx, z + l[1] * sx, top + G.UP, G.UP + G.DOWN);
+      if (t !== null && t > top + 0.01) return false;
+    }
+  }
+  return true;
+}
+/** Whether a foot at [x, y, z] suits a body standing at (x, gy, z) facing yaw. */
+function footOk(foot, x, z, yaw, gy) {
+  const f = fwdOf(yaw);
+  const mz = (foot[0] - x) * f[0] + (foot[2] - z) * f[1];
+  return legOk(ANKLE[1] + foot[1] - gy + G.CROUCH - HIP[1], mz - HIP[2]);
+}
+function probesClear(x, z, yaw, aim, base) {
+  for (const [frame, px, py, pz] of spec.probes) {
+    const y_ = frame === "body" ? yaw : aim, f = fwdOf(y_), l = leftOf(y_);
+    if (solid(x + l[0] * px + f[0] * pz, base + py, z + l[1] * px + f[1] * pz)) return false;
+  }
+  return true;
+}
+function gaitReset() {
+  const feet = {};
+  for (const s of ["l", "r"]) { const h = footHome(s, 0); feet[s] = [h[0], groundUnder(h[0], h[1], body.yaw, 0, false) ?? 0, h[1]]; }
+  gait.feet = feet; gait.gy = (feet.l[1] + feet.r[1]) / 2; gait.bodyY = -G.CROUCH;
+  gait.swing = { l: null, r: null }; gait.speed = 0; gait.turn = 0; gait.aimYaw = body.yaw;
+}
+const approach = (v, target, step) => v < target ? Math.min(target, v + step) : Math.max(target, v - step);
+function gaitTick(dt) {
+  if (!gait.feet) gaitReset();
+  const k = gait.keys;
+  const wantSpeed = (k.w ? G.MAX_SPEED : 0) - (k.s ? 0.5 * G.MAX_SPEED : 0);
+  // + yaw turns right (Minecraft's convention), so D raises it and A lowers it
+  const wantTurn = (k.d ? G.MAX_TURN : 0) - (k.a ? G.MAX_TURN : 0);
+  gait.speed = approach(gait.speed, wantSpeed, G.ACCEL * dt);
+  gait.turn = approach(gait.turn, wantTurn, G.TURN_ACCEL * dt);
+  const base = gait.gy + gait.bodyY;
+  // body: moves unless a probe would hit a block or a planted leg would be
+  // stretched too far; slides along a wall when one axis is free
+  if (gait.speed !== 0 || gait.turn !== 0) {
+    const yaw2 = body.yaw + rad(gait.turn) * dt, f2 = fwdOf(yaw2);
+    const dx = f2[0] * gait.speed * dt, dz = f2[1] * gait.speed * dt;
+    let moved = false;
+    for (const [useNew, mx, mz] of [[1, 1, 1], [1, 1, 0], [1, 0, 1], [1, 0, 0], [0, 1, 1], [0, 1, 0], [0, 0, 1]]) {
+      const cy = useNew ? yaw2 : body.yaw, nx = body.x + dx * mx, nz = body.z + dz * mz;
+      if (!probesClear(nx, nz, cy, gait.aimYaw, base)) continue;
+      if (!["l", "r"].every(s => gait.swing[s] || footOk(gait.feet[s], nx, nz, cy, gait.gy))) continue;
+      if (!mx || !mz) gait.speed = Math.hypot(dx * mx, dz * mz) / dt * Math.sign(gait.speed);
+      if (!useNew) gait.turn = 0;
+      body.x = nx; body.z = nz; body.yaw = cy; moved = true; break;
+    }
+    if (!moved) { gait.speed = 0; gait.turn = 0; }
+  }
+  const f = fwdOf(body.yaw);
+  // torso: toward its aim, unless its probes would hit
+  const step = rad(G.AIM_RATE) * dt;
+  const aim2 = gait.aimYaw + Math.max(-step, Math.min(step, wrapA(body.yaw - gait.aimYaw)));
+  if (aim2 !== gait.aimYaw && probesClear(body.x, body.z, body.yaw, aim2, base)) gait.aimYaw = aim2;
+  // steps
+  const lead = gait.speed * G.SWING * G.LEAD;
+  const moving = Math.abs(gait.speed) > 0.01 || Math.abs(gait.turn) > 0.5;
+  for (const s of ["l", "r"]) {
+    const o = s === "l" ? "r" : "l";
+    if (gait.swing[s] || gait.swing[o]) continue;
+    const off = Math.hypot(...footHome(s, lead).map((v, i) => v - gait.feet[s][i * 2]));
+    const other = Math.hypot(...footHome(o, lead).map((v, i) => v - gait.feet[o][i * 2]));
+    if (off > (moving ? G.STEP : G.SETTLE) && off >= other) {
+      const lx = body.x + f[0] * gait.speed * G.SWING, lz = body.z + f[1] * gait.speed * G.SWING;
+      const lyaw = body.yaw + rad(gait.turn) * G.SWING;
+      const [tx, tz] = footHome(s, lead, lx, lz, lyaw), a = gait.feet[s], oy = gait.feet[o][1];
+      for (const frac of STEP_FRACTIONS) {
+        const ex = a[0] + (tx - a[0]) * frac, ez = a[2] + (tz - a[2]) * frac;
+        const ey = groundUnder(ex, ez, lyaw, a[1]);
+        if (ey === null || Math.abs(ey - oy) > G.MAX_RISE) continue;
+        const b = [ex, ey, ez];
+        if (pathClear(a, b, lyaw) && footOk(b, lx, lz, lyaw, (ey + oy) / 2)) { gait.swing[s] = { t: 0, a: [...a], b }; break; }
+      }
+    }
+  }
+  // swings
+  const lift = { l: 0, r: 0 }, arcs = { l: 0, r: 0 };
+  let rise = 0;
+  for (const s of ["l", "r"]) {
+    const w = gait.swing[s];
+    if (!w) continue;
+    w.t = Math.min(1, w.t + dt / G.SWING);
+    const e = w.t * w.t * (3 - 2 * w.t);
+    gait.feet[s] = w.a.map((v, i) => v + (w.b[i] - v) * e);
+    arcs[s] = Math.sin(Math.PI * w.t);
+    lift[s] = (G.LIFT + 0.6 * Math.abs(w.b[1] - w.a[1])) * arcs[s];
+    rise = Math.max(rise, arcs[s]);
+    if (w.t >= 1) gait.swing[s] = null;
+  }
+  // body height follows the feet, unless a planted leg would be stretched
+  const y2 = approach(gait.gy, (gait.feet.l[1] + gait.feet.r[1]) / 2, G.CLIMB * dt);
+  if (["l", "r"].every(s => gait.swing[s] || footOk(gait.feet[s], body.x, body.z, body.yaw, y2))) gait.gy = y2;
+  gait.bodyY = -G.CROUCH + G.BOB * rise;
+  body.y = gait.gy + gait.bodyY;
+  // legs
+  for (const s of ["l", "r"]) {
+    const foot = gait.feet[s];
+    const mz = (foot[0] - body.x) * f[0] + (foot[2] - body.z) * f[1];
+    const yb = ANKLE[1] + foot[1] - gait.gy - gait.bodyY;
+    let my = yb + lift[s];
+    if (gait.swing[s]) for (const kf of [1, 0.6, 0.3, 0]) { my = yb + lift[s] * kf; if (kf === 0 || legOk(my - HIP[1], mz - HIP[2])) break; }
+    const [hip, knee] = legIK(my - HIP[1], mz - HIP[2]);
+    const clampJ = (j, v) => Math.max(spec.joints[j].range[0], Math.min(spec.joints[j].range[1], v));
+    pose["hip_" + s] = clampJ("hip_" + s, hip);
+    pose["knee_" + s] = clampJ("knee_" + s, knee);
+    pose["ankle_" + s] = clampJ("ankle_" + s, level.checked ? -(hip + knee) - G.TOE * arcs[s] : 0);
+  }
+  // the torso faces aimYaw, so the waist turns by yaw - aimYaw
+  if (!sweep.checked) pose.waist = wrapA(body.yaw - gait.aimYaw) * 180 / Math.PI;
+  document.getElementById("gaitInfo").textContent = `speed ${gait.speed.toFixed(1)} m/s, turn ${gait.turn.toFixed(0)}°/s, ground ${gait.gy.toFixed(1)} m`;
+}
+addEventListener("keydown", e => { if (e.target.tagName !== "INPUT" && e.target.tagName !== "SELECT") gait.keys[e.key.toLowerCase()] = true; });
+addEventListener("keyup", e => { gait.keys[e.key.toLowerCase()] = false; });
 
 // parts
 const parts = {};
@@ -307,14 +527,10 @@ const clock = new THREE.Clock();
 let t = 0, ts = 0;
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
+  const prev = new THREE.Vector3(body.x, 0, body.z);
   if (walk.checked) {
-    t += dt * 2.2;
-    for (const [side, ph] of [["l", 0], ["r", Math.PI]]) {
-      pose["hip_" + side] = -22 * Math.sin(t + ph);
-      pose["knee_" + side] = 30 * Math.max(0, Math.sin(t + ph + 1.1)) - 4;
-      for (const j of ["hip_", "knee_"]) sliders[j + side].value = pose[j + side];
-      if (level.checked) levelFoot(side); else { pose["ankle_" + side] = 0; sliders["ankle_" + side].value = 0; }
-    }
+    gaitTick(dt);
+    for (const j of ["hip_l", "knee_l", "ankle_l", "hip_r", "knee_r", "ankle_r", "waist"]) sliders[j].value = pose[j];
   }
   if (sweep.checked) {
     ts += dt;
@@ -323,7 +539,10 @@ renderer.setAnimationLoop(() => {
     for (const j of ["waist", "elev_hl", "elev_hr", "elev_ll", "elev_lr"]) sliders[j].value = pose[j];
   }
   if (fire.checked) spin += dt * 14;
-  groundBody();
+  if (walk.checked) bob = 0; else { body.y = gait.feet ? gait.gy : 0; groundBody(); }
+  // the camera follows the mech
+  const moved = new THREE.Vector3(body.x, 0, body.z).sub(prev);
+  camera.position.add(moved); controls.target.add(moved);
   for (const j in pose) document.getElementById("v_" + j).textContent = Math.round(pose[j]) + "°";
   const segs = segMatrices();
   const e = +ex.value;
@@ -348,8 +567,16 @@ renderer.setAnimationLoop(() => {
   controls.update(); renderer.render(scene, camera);
 });
 const VIEWS = { front:[0.8,3.2,10], left:[10.5,3.0,0.01], right:[-10.5,3.0,0.01], rear:[-0.8,3.6,-10], top:[0.01,12,0.3] };
-for (const b of document.querySelectorAll("[data-v]")) b.onclick = () => { camera.position.set(...VIEWS[b.dataset.v].map(v => v * K)); controls.target.copy(TARGET); };
-window.__viewer = { camera, controls, parts, pose, select, toggleBreak, VIEWS, TARGET };
+for (const b of document.querySelectorAll("[data-v]")) b.onclick = () => {
+  const at = new THREE.Vector3(body.x, 0, body.z);
+  camera.position.set(...VIEWS[b.dataset.v].map(v => v * K)).add(at); controls.target.copy(TARGET).add(at);
+};
+walk.onchange = () => { if (walk.checked) gaitReset(); };
+document.getElementById("course").onchange = e => {
+  buildCourse(e.target.value); body.x = 0; body.z = 0; body.yaw = 0; gaitReset(); e.target.blur();
+  camera.position.set(14, 9, -8); controls.target.set(0, 5, 4);
+};
+window.__viewer = { camera, controls, parts, pose, select, toggleBreak, VIEWS, TARGET, gait, body };
 window.__ready = true;
 </script>
 </body>

@@ -54,8 +54,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from mech_lib import (MATERIALS, MODEL_SCALE, NS, ROOT, TINTS, Elem, Part, beam, box, hitbox,  # noqa: E402
-                      MECH_SCALE, mirror_x, no_dent, plate, prism, ring_x, scale_part, to_local, write_models,
-                      write_textures)
+                      MECH_SCALE, PROBES, gait_scaled, mirror_x, no_dent, plate, prism, ring_x, scale_part, to_local,
+                      write_models, write_textures)
 from mech_pelvis import pelvis_parts  # noqa: E402
 from mech_torso import EYE as PILOT_EYE, RECLINE, SEAT, torso_parts  # noqa: E402
 
@@ -628,6 +628,18 @@ def write_tc_data(spec) -> None:
         " * rest point its +Y aims at (tseg 0 otherwise). */\n"
         "function mechPartData(): list {\n    return [\n        " + ind.join(part_rows) + "\n    ];\n}\n\n"
         f"/** Number of parts. */\nfunction mechPartCount(): num {{\n    return {len(part_rows)};\n}}\n\n"
+        f"/** The scale the mech was built at (MECH_SCALE): sizes in the gait are\n * given at the design size and multiplied by this. */\nfunction mechScale(): num {{\n    return {tc_num(MECH_SCALE)};\n}}\n\n"
+        "/** The procedural walk's numbers (GAIT in pack/src/mech_lib.py, at real\n"
+        " * size): lengths in meters, speeds in m/s, times in seconds, angles in\n"
+        " * degrees. */\n"
+        "function mechGait(): dict {\n    return {"
+        + ", ".join(f"{k_}: {tc_num(v)}" for k_, v in spec["gait"].items()) + "};\n}\n\n"
+        "/** Collision probes, each \"frame x y z\" (mech frame, meters): points that\n"
+        " * must stay out of solid blocks. Frame \"body\" turns with the heading,\n"
+        " * \"torso\" with the torso. */\n"
+        "function mechProbes(): list {\n    return [\n        "
+        + ",\n        ".join(f'"{f} {tc_num(x)} {tc_num(y)} {tc_num(z)}"' for f, x, y, z in spec["probes"])
+        + "\n    ];\n}\n\n"
         "/** Default armor paint and accent colors. */\n"
         "function mechDefaultColors(): list {\n    return ["
         + ", ".join(f"0x{c[1:].upper()}" for c in spec["tint_defaults"]) + "];\n}\n"
@@ -691,6 +703,9 @@ def main():
         "cockpit_seat": [round(c * MECH_SCALE, 4) for c in SEAT],
         "cockpit_eye": [round(c * MECH_SCALE, 4) for c in PILOT_EYE],
         "cockpit_recline": RECLINE,
+        "gait": gait_scaled(),
+        "probes": [[f, round(x * MECH_SCALE, 4), round(y * MECH_SCALE, 4), round(z * MECH_SCALE, 4)]
+                   for f, x, y, z in PROBES],
         "segments": segments,
         "joints": joints,
         "anims": {"fixed": "rigid with its segment",

@@ -1,0 +1,130 @@
+// Blocks for the walk: where a foot can stand, whether a swing's path is
+// clear, and whether the mech's collision probes are out of solid blocks.
+// Same as tools/gait_check.py (World, Walker.ground, path_clear,
+// probes_clear). No smoothing: a walking foot plants flat on the block tops
+// under it.
+
+/** Column top per "x z start" (block x and z, the height looked down from),
+ * or -999 for none; cleared every couple of seconds so changed blocks are
+ * seen. */
+declare global tColCache: dict[num];
+declare global tCacheTick: num;
+/** Collision probes: per probe [frame ("body" or "torso"), point (mech frame)]. */
+declare global tProbes: list;
+/** Where the ground under a foot is sampled, from its ankle point: (side, 0,
+ * forward) for the heel, middle, toe and both sides of the middle. */
+declare global tFootSamples: list[vec];
+
+/** Reads the probes and the foot samples (from loadGait). */
+function loadTerrain {
+    global tProbes = [];
+    for (line row of mechProbes()) {
+        line p = (line row as str).split(" ");
+        global tProbes.append([line p[1], vec(num.parse(line p[2] as str), num.parse(line p[3] as str), num.parse(line p[4] as str))]);
+    }
+    line g = mechGait();
+    line mid = line g["foot_mid"] as num;
+    line side = line g["foot_side"] as num;
+    global tFootSamples = [vec(0, 0, line g["foot_heel"] as num), vec(0, 0, line mid), vec(0, 0, line g["foot_toe"] as num), vec(line side, 0, line mid), vec(0 - line side, 0, line mid)];
+    global tColCache = {};
+}
+
+/** The top of the first solid block straight down from height `from` in the
+ * block column holding (x, z), looking `len` blocks down; `from` itself if
+ * it starts inside a block; -999 if there is none. */
+function colTop(x: num, z: num, from: num, len: num): num {
+    if (game.ticksSinceStartup - global tCacheTick > 40 || global tColCache.len() > 3000) {
+        global tColCache = {};
+        global tCacheTick = game.ticksSinceStartup;
+    }
+    line bx = num.floor(x);
+    line bz = num.floor(z);
+    line key = "%var(bx) %var(bz) %var(from)";
+    if (global tColCache.hasKeys(line key)) {
+        return global tColCache[line key];
+    }
+    line hit = game.raycast(loc(line bx + 0.5, from, line bz + 0.5, 90, 0), len, blockCollision="Solid blocks");
+    line h = -999;
+    if (from - line hit.y < len - 0.01) {
+        line h = line hit.y;
+    }
+    global tColCache[line key] = line h;
+    return line h;
+}
+
+/** Ground height under a foot whose ankle point is at (x, z), facing yaw,
+ * looked for from gUp above `near` to gDown below it: the highest block top
+ * under its heel, middle, toe and sides. -999 if there is none, or it is a
+ * wall (a block at the top of that reach), or (with stand 1) the middle of
+ * the foot is not on it. */
+function groundUnder(x: num, z: num, yaw: num, near: num, stand: num = 1): num {
+    line F = vec(0 - num.sin(yaw), 0, num.cos(yaw));
+    line L = vec(num.cos(yaw), 0, num.sin(yaw));
+    line top0 = near + global gUp;
+    line top = -999;
+    line midTop = -999;
+    repeat (line i to 5) {
+        line s = global tFootSamples[line i];
+        line t = colTop(x + line L.x * line s.x + line F.x * line s.z, z + line L.z * line s.x + line F.z * line s.z, line top0, global gUp + global gDown);
+        if (line t < -900 || line t >= line top0 - 0.01) {
+            return -999;
+        }
+        line top = num.max(line top, line t);
+        if (line i == 2) {
+            line midTop = line t;
+        }
+    }
+    if (stand == 1 && line midTop < line top - 0.3) {
+        return -999;
+    }
+    return line top;
+}
+
+/** 1 if a swing from a to b passes over nothing higher than both ends: the
+ * ground along the foot's sweep, from its heel at the start to its toe at the
+ * end, every half block, under its middle and both sides. */
+function pathClear(a: vec, b: vec, yaw: num): num {
+    line top = num.max(a.y, b.y);
+    line F = vec(0 - num.sin(yaw), 0, num.cos(yaw));
+    line L = vec(num.cos(yaw), 0, num.sin(yaw));
+    line p0 = vec(a.x, 0, a.z) + line F * (global tFootSamples[1]).z;
+    line p1 = vec(b.x, 0, b.z) + line F * (global tFootSamples[3]).z;
+    line side = (global tFootSamples[4]).x;
+    line n = num.max(1, num.ceil((line p1 - line p0).len() / 0.5));
+    repeat (line i to line n + 1) {
+        line p = line p0 + (line p1 - line p0) * ((line i - 1) / line n);
+        for (line sx of [0, line side, 0 - line side]) {
+            line q = line p + line L * (line sx as num);
+            line t = colTop(line q.x, line q.z, line top + global gUp, global gUp + global gDown);
+            if (line t > line top + 0.01) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+/** 1 if no collision probe is in a solid block for a body at (x, base, z):
+ * body probes turned to `yaw`, torso probes to `aim`. base is the ground
+ * level plus the gait's body height. */
+function probesClear(x: num, z: num, yaw: num, aim: num, base: num): num {
+    line Fb = vec(0 - num.sin(yaw), 0, num.cos(yaw));
+    line Lb = vec(num.cos(yaw), 0, num.sin(yaw));
+    line Ft = vec(0 - num.sin(aim), 0, num.cos(aim));
+    line Lt = vec(num.cos(aim), 0, num.sin(aim));
+    for (line pr of global tProbes) {
+        line p = line pr as list;
+        line v = line p[2] as vec;
+        line F = line Fb;
+        line L = line Lb;
+        if (line p[1] as str == "torso") {
+            line F = line Ft;
+            line L = line Lt;
+        }
+        line blk = game.getBlockMaterial(loc(x + line L.x * line v.x + line F.x * line v.z, base + line v.y, z + line L.z * line v.x + line F.z * line v.z), returnValue="Item");
+        if (line blk.isSolid()) {
+            return 0;
+        }
+    }
+    return 1;
+}

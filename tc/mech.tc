@@ -1,9 +1,10 @@
-// Mechs: spawning, posing, drawing and removing. No physics yet: a mech
-// stands where it was spawned, in the pose its joint angles give.
+// Mechs: spawning, posing, drawing and removing. The pose comes from the
+// joint angles: set by hand (@pose) or each tick by the procedural walk
+// (gait.tc). No physics yet.
 //
 // A mech is mechPartCount() item displays, one per part (mech_data.tc). All
-// of them stand on the mech origin (on the ground midway between the hips)
-// and each gets its own transformation matrix:
+// of them stand on the mech origin (on the ground midway between the hips,
+// raised or lowered by the gait's body height) and get the matrix:
 //
 //   heading * segment(pose) * translate(pivot) * rotate(rest)
 //
@@ -13,13 +14,20 @@
 // toward its posed target point; a "spin_z" part (heavy barrels) turns about
 // its own Z on top of its segment.
 //
+// Parts on the same segment with the same pivot and rest rotation (most of
+// them) share that matrix, so they are drawn as one group: one matrix per
+// group per tick instead of one per part.
+//
 // Mech frame: +X left, +Y up, +Z forward, meters. DiamondFire spawns item
 // displays without the spawn location's yaw, so the heading goes into the
 // matrix too.
 
-/** Display UUIDs of each mech's parts, in mechPartData order. */
+/** Display UUIDs of each mech's parts, in mechPartData order, and the same
+ * UUIDs by draw group (mGroup order). */
 declare global mAll: list;
-/** Mech origin (world) and heading (yaw degrees, Minecraft's convention). */
+declare global mGroupIds: list;
+/** Mech position on the ground (world) and heading (yaw degrees, Minecraft's
+ * convention: it faces (-sin yaw, 0, cos yaw)). */
 declare global mPos: list[vec];
 declare global mYaw: list[num];
 /** Joint angle per segment (degrees, mechSegData order; the root's is unused). */
@@ -38,11 +46,23 @@ declare global mSeg: list;
 /** Parsed mechPartData: per part [id, itemModel, seg, anim, pivot, x col,
  * y col, z col, target seg, target]. */
 declare global mPart: list;
+/** Draw groups: per group [seg, anim, pivot, x col, y col, z col, target
+ * seg, target] (a part's fields without its id and model), and each part's
+ * group index. */
+declare global mGroup: list;
+declare global mPartGroup: list[num];
+/** Which version of the parsed data is loaded (bumped when its shape changes,
+ * since globals outlive a code update). */
 declare global mechLoaded: num;
+
+/** The parsed data's current version. */
+function mechDataVersion(): num {
+    return 4;
+}
 
 /** Parses the generated data once. */
 function loadMechData {
-    if (global mechLoaded == 1) {
+    if (global mechLoaded == mechDataVersion()) {
         return;
     }
     global mSeg = [];
@@ -55,6 +75,9 @@ function loadMechData {
         global mSeg.append([line s[1], num.parse(line s[2] as str), line s[3], line s[4], vec(line nums[1] as num, line nums[2] as num, line nums[3] as num), line nums[4], line nums[5]]);
     }
     global mPart = [];
+    global mGroup = [];
+    global mPartGroup = [];
+    line groups = {};
     for (line row of mechPartData()) {
         line p = (line row as str).split(" ");
         line n = [];
@@ -67,8 +90,24 @@ function loadMechData {
         line cz = vec(line n[10] as num, line n[11] as num, line n[12] as num);
         line target = vec(line n[14] as num, line n[15] as num, line n[16] as num);
         global mPart.append([line p[1], line p[2], num.parse(line p[3] as str), line p[4], line pivot, line cx, line cy, line cz, line n[13], line target]);
+        // fixed parts with the same segment, pivot and rest share a group;
+        // aimed and spinning parts get one each
+        line key = line p[1] as str;
+        if (line p[4] as str == "fixed") {
+            line key = line p[3] as str;
+            repeat (line i to 12) {
+                line key = line key + " " + (line p[line i + 4] as str);
+            }
+        }
+        if (line groups.hasKeys(line key)) {
+            global mPartGroup.append(line groups[line key] as num);
+        } else {
+            global mGroup.append([num.parse(line p[3] as str), line p[4], line pivot, line cx, line cy, line cz, line n[13], line target]);
+            line groups[line key] = global mGroup.len();
+            global mPartGroup.append(global mGroup.len());
+        }
     }
-    global mechLoaded = 1;
+    global mechLoaded = mechDataVersion();
 }
 
 /** Index of the segment turned by joint `name` (0 if there is none). */
@@ -119,8 +158,9 @@ function mechSegments(m: num): list {
     return line out;
 }
 
-/** Draws mech m: every display goes to the origin and gets its part's matrix,
- * interpolated over `dur` ticks. */
+/** Draws mech m: every display goes to the origin (the ground position plus
+ * the gait's body height) and each draw group gets its matrix, interpolated
+ * over `dur` ticks. */
 function mechRender(m: num, dur: num = 0) {
     line yaw = global mYaw[m];
     line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
@@ -128,32 +168,28 @@ function mechRender(m: num, dur: num = 0) {
     line L = line U.cross(line F);
     line W = [line L, line U, line F];
     line segs = mechSegments(m);
-    line ids = global mAll[m] as list;
     line spin = global mSpin[m];
     line o = global mPos[m];
-    select entitiesByName(line ids as list[str]);
-    selectedEntity.teleport(loc(line o.x, line o.y, line o.z));
+    select entitiesByName(global mAll[m] as list[str]);
+    selectedEntity.teleport(loc(line o.x, line o.y + global gBodyY[m], line o.z));
     select reset;
-    repeat (line i to global mPart.len()) {
-        line id = line ids[line i] as str;
-        if (line id == "") {
-            continue;
-        }
-        line p = global mPart[line i] as list;
-        line S = line segs[line p[3] as num] as list;
-        line pivot = line p[5] as vec;
-        line cx = rotApply(line S, line p[6] as vec);
-        line cy = rotApply(line S, line p[7] as vec);
-        line cz = rotApply(line S, line p[8] as vec);
+    line gids = global mGroupIds[m] as list;
+    repeat (line i to global mGroup.len()) {
+        line p = global mGroup[line i] as list;
+        line S = line segs[line p[1] as num] as list;
+        line pivot = line p[3] as vec;
+        line cx = rotApply(line S, line p[4] as vec);
+        line cy = rotApply(line S, line p[5] as vec);
+        line cz = rotApply(line S, line p[6] as vec);
         line t = rotApply(line S, line pivot) + (line S[4] as vec);
-        if (line p[4] as str == "aim") {
+        if (line p[2] as str == "aim") {
             // +Y from this part's posed pivot to its posed target
-            line T = line segs[line p[9] as num] as list;
-            line b = rotApply(line T, line p[10] as vec) + (line T[4] as vec);
+            line T = line segs[line p[7] as num] as list;
+            line b = rotApply(line T, line p[8] as vec) + (line T[4] as vec);
             line cy = (line b - line t).setLength(1);
             line cx = (vec(1, 0, 0) - line cy * line cy.x).setLength(1);
             line cz = line cx.cross(line cy);
-        } else if (line p[4] as str == "spin_z") {
+        } else if (line p[2] as str == "spin_z") {
             line c = num.cos(line spin);
             line sn = num.sin(line spin);
             line sx = line cx * line c + line cy * line sn;
@@ -164,7 +200,7 @@ function mechRender(m: num, dur: num = 0) {
         line wy = rotApply(line W, line cy);
         line wz = rotApply(line W, line cz);
         line wt = rotApply(line W, line t);
-        select entitiesByName(line id);
+        select entitiesByName(line gids[line i] as list[str]);
         selectedEntity.setDisplayTransformationMatrix([line wx.x, line wy.x, line wz.x, line wt.x, line wx.y, line wy.y, line wz.y, line wt.y, line wx.z, line wy.z, line wz.z, line wt.z, 0, 0, 0, 1]);
         selectedEntity.setDisplayInterpolation(dur, 0);
         select reset;
@@ -189,8 +225,19 @@ function spawnMech(at: loc, paint: num, accent: num): num {
         lastEntity.setDisplayBrightness(15, 15);
         line ids.append(lastEntity.uuid);
     }
+    line gids = [];
+    repeat (line i to global mGroup.len()) {
+        line gids.append([]);
+    }
+    repeat (line i to line ids.len()) {
+        line g = global mPartGroup[line i];
+        line members = line gids[line g] as list;
+        line members.append(line ids[line i]);
+        line gids[line g] = line members;
+    }
     global mechCount += 1;
     global mAll.append(line ids);
+    global mGroupIds.append(line gids);
     global mPos.append(vec(at.x, at.y, at.z));
     global mYaw.append(at.getCoordinate(coord="Yaw"));
     line joints = [];
@@ -201,7 +248,9 @@ function spawnMech(at: loc, paint: num, accent: num): num {
     global mSpin.append(0);
     global mOwner.append(default.uuid);
     global mGone.append(0);
+    gaitInit(global mechCount);
     mechRender(global mechCount);
+    ensureMechLoop();
     return global mechCount;
 }
 
@@ -215,7 +264,7 @@ function spawnMechHere(turn: num = 0) {
     line at = loc(line at.x, line at.y, line at.z, 0, line yaw + 180 + turn);
     line cols = mechDefaultColors();
     line m = spawnMech(line at, line cols[1] as num, line cols[2] as num);
-    default.sendMessage(s"<gray>Mech <yellow>%var(m)</yellow> spawned. <yellow>@pose JOINT DEGREES</yellow> moves a joint.");
+    default.sendMessage(s"<gray>Mech <yellow>%var(m)</yellow> spawned. <yellow>@walk</yellow>, <yellow>@turn</yellow>, <yellow>@follow</yellow> or <yellow>@pose</yellow> it.");
 }
 
 /** Removes the displays in `ids`. */
@@ -236,6 +285,7 @@ function removeMech(m: num) {
     }
     removeDisplays(global mAll[m] as list);
     global mAll[m] = [];
+    global mGroupIds[m] = [];
     global mGone[m] = 1;
 }
 
@@ -245,6 +295,8 @@ function clearMechs {
         removeMech(line m);
     }
     global mAll = [];
+    global mGroupIds = [];
+    gaitClear();
     global mPos = [];
     global mYaw = [];
     global mJoint = [];
@@ -290,7 +342,8 @@ function mechNear(): num {
 }
 
 /** Sets joint `name` of mech m to `deg` (clamped to its range) and redraws
- * it over 5 ticks. Returns the angle set, or -999 for an unknown joint. */
+ * it over 5 ticks. Returns the angle set, or -999 for an unknown joint. While
+ * the mech walks, the gait sets the leg joints and the waist every tick. */
 function mechPose(m: num, name: str, deg: num): num {
     loadMechData();
     line s = mechJointSeg(name);

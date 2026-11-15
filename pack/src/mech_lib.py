@@ -28,6 +28,57 @@ ASSETS = ROOT / f"pack/assets/{NS}"
 # (1.43 m of headroom, the viewport at the pilot's eye height). Joint angles
 # and ranges do not change.
 MECH_SCALE = 2.1
+# The procedural walk's numbers (tc/gait.tc, the viewer, tools/gait_check.py
+# all read them from here, through parts.json and mech_data.tc). Lengths are
+# at the design size (times MECH_SCALE when written out); speeds in m/s of
+# design size per second, times in seconds, angles in degrees.
+GAIT = {
+    "crouch": 0.20,      # body lowered from the rest pose, so the legs keep a bend (and reach further)
+    "swing": 0.6,        # seconds a step takes
+    "lift": 0.25,        # how high a foot rises mid-step
+    "bob": 0.05,         # body rise at mid-swing
+    "step": 0.30,        # moving, a foot steps when it is this far from its target spot
+    "settle": 0.06,      # standing, a foot steps when it is this far off
+    "lead": 0.5,         # a foot lands this share of a swing's travel ahead of its home spot
+    "max_speed": 1.8,    # fastest walk forward (backward is half); the stride is speed x 2 x swing
+    "accel": 0.8,        # how fast the speed changes
+    "max_turn": 40.0,    # degrees/s
+    "turn_accel": 80.0,  # degrees/s^2
+    "aim_rate": 30.0,    # how fast the torso turns toward its aim, degrees/s
+    "toe": 12.0,         # toe pitch at mid-swing
+    # terrain
+    "max_rise": 0.57,    # a foot may land at most this far above or below the other (1.2 m real: one
+                         # block; two would fold the knee past its range)
+    "probe_up": 1.2,     # ground under a foot is looked for from this far above it...
+    "probe_down": 1.5,   # ...down to this far below it
+    "climb_rate": 1.0,   # how fast the body follows the feet's height, per second
+    "foot_heel": -0.29,  # where the ground under a foot is sampled, from its ankle point:
+    "foot_mid": 0.33,    #   heel, middle and toe along the foot, and the middle
+    "foot_toe": 0.95,    #   moved foot_side to either side
+    "foot_side": 0.24,
+    "margin": 1.0,       # a foothold is refused when a joint would come within this of its limit (degrees)
+    "max_reach": 0.97,   # ...or the leg would stretch past this share of its length
+}
+GAIT_LENGTHS = ("crouch", "lift", "bob", "step", "settle", "max_speed", "accel", "max_rise", "probe_up",
+                "probe_down", "climb_rate", "foot_heel", "foot_mid", "foot_toe", "foot_side")
+
+# Collision probes (design size, mech frame): points that must stay out of
+# solid blocks. "body" ones turn with the body's heading, "torso" ones with
+# the torso's (the waist turns it).
+PROBES = (
+    [("body", x, y, z) for x in (1.30, -1.30) for y in (3.0, 3.6) for z in (0.33, -0.33)]      # hips and pelvis
+    + [("body", x, 1.95, 0.78) for x in (0.75, -0.75)]                                          # knees
+    + [("body", x, y, z) for x in (0.75, -0.75) for y, z in ((1.30, 0.15), (0.90, -0.10))]     # shins
+    + [("torso", x, y, z) for x in (0.82, -0.82) for y in (4.1, 4.85) for z in (-1.45, -0.3, 0.98)]  # hull
+    + [("torso", x, 4.40, z) for x in (1.30, -1.30) for z in (-0.5, 1.2, 2.5)]                 # heavy guns
+)
+
+
+def gait_scaled() -> dict:
+    """GAIT at real size."""
+    return {k: round(v * MECH_SCALE, 4) if k in GAIT_LENGTHS else v for k, v in GAIT.items()}
+
+
 MODEL_SCALE = 0.2            # models are 1/5 size (parts reach 7.5 m from their pivot); display scale = 5
 UNITS_PER_M = 16 * MODEL_SCALE
 

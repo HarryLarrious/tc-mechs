@@ -19,7 +19,8 @@ The first mech walks on two legs and carries a turret torso with two heavy side 
 | [pack/src/mech_lib.py](pack/src/mech_lib.py) | Shared code: materials, textures, cuboid helpers, model and item writers |
 | [tools/viewer/](tools/viewer/) | 3D viewer: pose the joints, play a walk cycle, explode or break parts |
 | [tools/build_pack.py](tools/build_pack.py) | Validates, zips and publishes the pack to the `pack-dist` branch, and points `tc/pack.tc` at it |
-| [tc/](tc/) | Terracotta code for the plot: spawning and posing mechs (`mech.tc`), commands, the pack; `mech_data.tc` is generated |
+| [tc/](tc/) | Terracotta code for the plot: spawning, drawing and posing mechs (`mech.tc`), the procedural walk (`gait.tc`) over blocks (`terrain.tc`), commands, the pack; `mech_data.tc` is generated |
+| [tools/gait_check.py](tools/gait_check.py) | The reference model of the procedural walk, with its checks (IK round trip, joint ranges at every speed and turn rate, test courses of steps, walls and drops) |
 
 ## Build the mech
 
@@ -56,6 +57,10 @@ In game (play mode):
 | Command | What it does |
 | --- | --- |
 | `@mech [turn]` | Spawns a mech 20 blocks in front of you, facing you (or turned by `turn` degrees) |
+| `@walk [m/s] [deg/s]` | The nearest mech walks forward (3 m/s by default, up to 3.8; negative walks back) and turns (+ right) |
+| `@turn [deg/s]` | The nearest mech turns on the spot (30°/s by default, up to 40; + right) |
+| `@stop` | The nearest mech stops; its feet settle under it |
+| `@follow` | The nearest mech walks after you and aims its torso and guns at you; `@follow` again or `@stop` ends it |
 | `@pose JOINT DEGREES` | Moves a joint on the nearest mech: `hip_l`, `knee_l`, `ankle_l`, `hip_r`, `knee_r`, `ankle_r`, `waist`, `elev_hl`, `elev_hr`, `elev_ll`, `elev_lr` |
 | `@pose reset` | Puts the nearest mech back in its rest pose |
 | `@clearmechs` | Removes every mech |

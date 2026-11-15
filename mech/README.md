@@ -171,20 +171,107 @@ The armor is bolted plates with accent stripes and warning plates:
 
 Armor parts break off (`detach`). Each one shields the part under it.
 
+## Procedural walk
+
+The mech has no animation clips. Each tick it works out its own steps from
+where its body is going: `tc/gait.tc` on the plot, the same code in the
+viewer, and `tools/gait_check.py` as the reference with its checks. All three
+read their numbers from `GAIT` in `pack/src/mech_lib.py`, through
+`parts.json` and `mechGait()` in `tc/mech_data.tc`, so tuning happens in one
+place.
+
+- **Body:** it moves and turns at a commanded speed and turn rate, which ease
+  in and out. The fastest is 3.8 m/s forward, half that backward, and 40°/s.
+  It is crouched 0.42 m, which keeps the legs from straightening and lets them
+  reach further, and it rises 0.1 m as each foot passes mid-swing.
+- **Steps:** a planted foot stays where it is in the world. A foot steps when
+  it lags more than 0.63 m (0.13 m when standing) behind its home spot, and
+  only while the other foot is planted, so the feet alternate. The home spot
+  is under its hip, moved half a step ahead at speed. The swing takes 0.6 s.
+  It goes from where the foot is to where its home will be when it lands,
+  eased in and out, lifting 0.53 m at mid-swing with the toes pitched down
+  12°.
+- **Legs:** inverse kinematics. Each leg turns only about X, so it works in
+  its own plane. The hip and knee angles come from the hip-knee-ankle
+  triangle, with the knee always bending the way it does at rest. The ankle
+  keeps the foot level. Each angle is clamped to its joint's range, and the
+  pistons follow because they aim at their mounts. `tools/gait_check.py`
+  checks that the IK lands the ankle exactly where it was asked. It also
+  checks that walking at every speed and turn rate keeps every joint in range
+  and every foothold within reach.
+- **Stride:** at a steady speed the feet step back to back, so the stride is
+  speed × 2 × swing time: 4.5 m at full speed. The joints' range sets the
+  limit. At full speed the legs use up to 93% of their reach, with every
+  joint at least 6° inside its range.
+- **Torso:** it faces where it was facing and turns toward its aim at 30°/s.
+  So it trails the body's turns and then swings back to face ahead. When the
+  mech follows a player, the torso and the guns aim at them.
+
+A mech's legs only hinge about X (no hip yaw), so when it turns, a planted
+foot slides sideways a little until it steps.
+
+### Blocks
+
+The walk reads the blocks around it (`tc/terrain.tc`). There is no ground
+smoothing, as there is for the rally car's wheels. A walking foot plants flat
+on whatever block tops are under it.
+
+- **Footholds:** the ground under a foot is the highest block top under its
+  heel, middle, toe and both sides. It is found by a raycast down from 2.5 m
+  above the foot to 3.2 m below it, cached per column for two seconds. A
+  block at the top of that reach is a wall, not ground. The middle of the
+  foot must be on the top too, so a foot never perches on an edge by its heel
+  or toe.
+- **Choosing a step:** the foot tries the planned landing spot, then a longer
+  step (to get the whole foot onto a step), then shorter ones. It takes the
+  first spot that meets every test:
+  - it has ground,
+  - it is within 1.2 m (one block) above or below the other foot,
+  - the foot's sweep from heel to toe crosses nothing higher than both ends,
+    checked every half block,
+  - the leg can reach it, with every joint at least 1° inside its range and
+    the leg under 97% of its length.
+
+  A step up or down lifts the foot higher, by 0.6 × the height difference.
+  A 2-block ledge or drop is a wall to this mech: its knee cannot fold far
+  enough to plant a foot two blocks up.
+- **Body height:** it follows the average height of the feet at 2.1 m/s,
+  except when that would stretch a planted leg out of reach.
+- **Hitbox:** 32 collision probe points (`PROBES` in `mech_lib.py`) on the
+  hips, knees, shins, turret hull and heavy guns. The body probes turn with
+  the heading, and the hull and gun probes turn with the torso. A move or turn
+  that would put any probe in a solid block is tried along one axis only, so
+  the mech slides along a wall. If neither axis works, it stops. The torso
+  will not turn its guns into a wall. The body also never moves so far that a
+  planted leg would overstretch, so a mech whose feet can't go on stops and
+  waits.
+
+`tools/gait_check.py` walks the reference model over test courses:
+
+- climbing a 1-block step and a staircase, and stepping down,
+- stopping at a 2-block ledge, a 2-block drop, a 3-block wall one block
+  thick, a cliff, and a bar at turret height,
+- turning on the spot beside a tall wall.
+
+It checks that no probe ever ends up inside a block and that every joint
+stays in range. The viewer's "Course" menu builds the same kinds of
+obstacles.
+
 ## Viewer
 
 `tools/viewer/` has a slider for every joint: the six leg joints, the waist
-and the four gun elevations. It has a walk cycle, with the legs half a stride
-apart and the body raised or lowered so the lower foot stays on the ground,
-and a "keep feet level" option that sets the ankles. "Turret sweep" swings the
-torso and aims the guns, and "Spin barrels" turns the heavy barrel clusters.
+and the four gun elevations. "Walk" runs the procedural walk: W and S walk
+forward and back, A and D turn, and the camera follows the mech. "Feet level"
+keeps the ankles flat. "Turret sweep" swings the torso and aims the guns, and
+"Spin barrels" turns the heavy barrel clusters.
 
 ## Not done yet
 
 - Collision limits: the joint ranges keep the pistons working but do not stop
   parts from passing through each other.
-- Game code: physics, walking, aiming, firing and damage. `tc/` can spawn,
-  pose and remove mechs so far.
+- Game code: player controls, firing and damage. `tc/` can spawn, pose, walk
+  over blocks and remove mechs so far. Gravity is not done: a mech whose
+  ground is removed under it does not fall.
 - Not loaded in game yet; the models have only been checked in the viewer.
 
 ## Plot code

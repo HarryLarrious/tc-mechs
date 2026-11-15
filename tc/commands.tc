@@ -20,10 +20,12 @@ playerevent command {
         default.sendMessage(s"<gray>Mechs removed.");
     } else if (line cmd == "pose") {
         poseCommand(line words);
+    } else if (line cmd == "walk" || line cmd == "turn" || line cmd == "stop" || line cmd == "follow") {
+        driveCommand(line cmd, line words);
     } else if (line cmd == "pack") {
         packSend();
     } else {
-        default.sendMessage(s"<gray>Commands: <yellow>@mech [turn]</yellow>, <yellow>@pose JOINT DEGREES</yellow>, <yellow>@pose reset</yellow>, <yellow>@clearmechs</yellow>, <yellow>@pack</yellow>");
+        default.sendMessage(s"<gray>Commands: <yellow>@mech [turn]</yellow>, <yellow>@walk [m/s] [turn]</yellow>, <yellow>@turn [deg/s]</yellow>, <yellow>@stop</yellow>, <yellow>@follow</yellow>, <yellow>@pose JOINT DEGREES</yellow>, <yellow>@pose reset</yellow>, <yellow>@clearmechs</yellow>, <yellow>@pack</yellow>");
     }
 }
 
@@ -52,4 +54,40 @@ function poseCommand(words: list) {
         return;
     }
     default.sendMessage(s"<gray>Mech %var(m): %var(name) at %var(a)°.");
+}
+
+/** @walk [m/s] [deg/s] | @turn [deg/s] | @stop | @follow: drives the nearest
+ * mech. Turn rates are + to the right. */
+function driveCommand(cmd: str, words: list) {
+    line m = mechNear();
+    if (line m == 0) {
+        default.sendMessage(s"<gray>No mech here. <yellow>@mech</yellow> spawns one.");
+        return;
+    }
+    if (cmd == "follow") {
+        if (gaitFollowToggle(line m) == 1) {
+            default.sendMessage(s"<gray>Mech %var(m) is following you. <yellow>@follow</yellow> again or <yellow>@stop</yellow> to stop.");
+        } else {
+            default.sendMessage(s"<gray>Mech %var(m) stopped following you.");
+        }
+        return;
+    }
+    line speed = 0;
+    line turn = 0;
+    if (cmd == "walk") {
+        line speed = 3;
+        if (words.len() >= 2) {
+            line speed = num.parse(words[2] as str);
+        }
+        if (words.len() >= 3) {
+            line turn = num.parse(words[3] as str);
+        }
+    } else if (cmd == "turn") {
+        line turn = 30;
+        if (words.len() >= 2) {
+            line turn = num.parse(words[2] as str);
+        }
+    }
+    gaitDrive(line m, line speed, line turn);
+    default.sendMessage(s"<gray>Mech %var(m): speed %var(speed) m/s, turning %var(turn)°/s.");
 }
