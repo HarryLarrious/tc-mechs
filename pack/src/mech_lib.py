@@ -23,7 +23,12 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parent.parent.parent
 NS = "mech"
 ASSETS = ROOT / f"pack/assets/{NS}"
-MODEL_SCALE = 0.5            # model is half size; display scale = 2
+# Everything is designed at a small size and then scaled up by MECH_SCALE as it
+# is written out, so the turret's cabin just fits a pilot in a reclined chair
+# (1.43 m of headroom, the viewport at the pilot's eye height). Joint angles
+# and ranges do not change.
+MECH_SCALE = 2.1
+MODEL_SCALE = 0.2            # models are 1/5 size (parts reach 7.5 m from their pivot); display scale = 5
 UNITS_PER_M = 16 * MODEL_SCALE
 
 # ---------------------------------------------------------------------------
@@ -48,6 +53,8 @@ MATERIALS: dict[str, dict] = {
     "vent":      {},
     "glow":      {"emit": 15},
     "visor":     {},
+    "seat":      {},
+    "screen":    {"emit": 12},
 }
 
 
@@ -192,6 +199,23 @@ def make_textures() -> dict[str, Image.Image]:
     d.line((0, 4, 15, 4), fill=(70, 130, 170, 255))
     d.line((3, 10, 9, 10), fill=(40, 90, 125, 255))
     t["visor"] = visor
+
+    seat = _flat((34, 35, 40), noise=4, seed=22)         # padded seat, quilted, with a red stripe
+    d = ImageDraw.Draw(seat)
+    for y in (4, 8, 12):
+        d.line((0, y, 15, y), fill=(24, 25, 29, 255))
+    d.line((7, 0, 7, 15), fill=(170, 30, 30, 255), width=2)
+    t["seat"] = seat
+
+    scr = Image.new("RGBA", (16, 16), (8, 22, 30, 255))  # display: frame, grid and readouts
+    d = ImageDraw.Draw(scr)
+    d.rectangle((0, 0, 15, 15), outline=(40, 46, 52, 255))
+    for k in (5, 10):
+        d.line((1, k, 14, k), fill=(20, 70, 80, 255))
+        d.line((k, 1, k, 14), fill=(20, 70, 80, 255))
+    d.line((2, 12, 5, 8, 8, 9, 11, 4, 13, 6), fill=(90, 235, 255, 255))
+    d.rectangle((2, 2, 4, 3), fill=(240, 180, 40, 255))
+    t["screen"] = scr
     return t
 
 
@@ -314,6 +338,21 @@ def mirror_x(elems: list[Elem]) -> list[Elem]:
         faces = tuple({"east": "west", "west": "east"}.get(f, f) for f in e.faces)
         out.append(Elem(a, b, e.mat, rot, origin, faces, e.dent))
     return out
+
+
+def scale_part(p: Part, k: float) -> None:
+    """Scales a part about the frame origin by k: its elements, pivot and
+    mount points. Rotations and joint angles do not change."""
+    sc = lambda v: tuple(round(c * k, 5) for c in v)
+    p.elems = [Elem(sc(e.a), sc(e.b), e.mat, e.rot, sc(e.origin) if e.origin else None, e.faces, e.dent)
+               for e in p.elems]
+    p.pivot = sc(p.pivot)
+    if p.links:
+        p.links = dict(p.links)
+        if "to" in p.links:
+            p.links["to"] = [round(c * k, 4) for c in p.links["to"]]
+        if "rest_length" in p.links:
+            p.links["rest_length"] = round(p.links["rest_length"] * k, 4)
 
 
 def no_dent(elems: list[Elem]) -> list[Elem]:

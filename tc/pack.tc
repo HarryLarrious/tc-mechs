@@ -1,0 +1,19 @@
+// The resource pack: every player gets it on join, and @pack sends it again.
+
+/** The published pack (tools/build_pack.py rewrites this URL on every build). */
+function packUrl(): str {
+    return "https://raw.githubusercontent.com/HarryLarrious/tc-mechs/pack-dist/mech-pack-1bbfe592d537.zip";
+}
+
+/** Sends the resource pack to the player. */
+function packSend {
+    default.sendResourcePack(packUrl());
+}
+
+playerevent resourcePackLoad {
+    default.sendMessage(s"<green>Pack loaded.</green> <gray>Type <yellow>@mech</yellow> to spawn a mech, <yellow>@clearmechs</yellow> to remove them all.");
+}
+
+playerevent resourcePackDecline {
+    default.sendMessage(s"<red>Resource pack declined.</red> <gray>The mechs are drawn by it. Allow server resource packs and type <yellow>@pack</yellow>.");
+}

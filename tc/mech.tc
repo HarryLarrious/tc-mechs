@@ -1,0 +1,329 @@
+// Mechs: spawning, posing, drawing and removing. No physics yet: a mech
+// stands where it was spawned, in the pose its joint angles give.
+//
+// A mech is mechPartCount() item displays, one per part (mech_data.tc). All
+// of them stand on the mech origin (on the ground midway between the hips)
+// and each gets its own transformation matrix:
+//
+//   heading * segment(pose) * translate(pivot) * rotate(rest)
+//
+// Segments hang off each other by joints (mechSegData): the legs on hinges
+// about X, the torso about Y on the waist ring, the guns about X. An "aim"
+// part (a piston cylinder or rod) sits at its posed pivot with its +Y turned
+// toward its posed target point; a "spin_z" part (heavy barrels) turns about
+// its own Z on top of its segment.
+//
+// Mech frame: +X left, +Y up, +Z forward, meters. DiamondFire spawns item
+// displays without the spawn location's yaw, so the heading goes into the
+// matrix too.
+
+/** Display UUIDs of each mech's parts, in mechPartData order. */
+declare global mAll: list;
+/** Mech origin (world) and heading (yaw degrees, Minecraft's convention). */
+declare global mPos: list[vec];
+declare global mYaw: list[num];
+/** Joint angle per segment (degrees, mechSegData order; the root's is unused). */
+declare global mJoint: list;
+/** Heavy barrel cluster angle (degrees). */
+declare global mSpin: list[num];
+/** UUID of the player who spawned each mech, and 1 once it was removed (its
+ * slot stays so later mechs keep their numbers). */
+declare global mOwner: list[str];
+declare global mGone: list[num];
+/** Number of mechs. */
+declare global mechCount: num;
+
+/** Parsed mechSegData: per segment [name, parent, joint, axis, pivot, lo, hi]. */
+declare global mSeg: list;
+/** Parsed mechPartData: per part [id, itemModel, seg, anim, pivot, x col,
+ * y col, z col, target seg, target]. */
+declare global mPart: list;
+declare global mechLoaded: num;
+
+/** Parses the generated data once. */
+function loadMechData {
+    if (global mechLoaded == 1) {
+        return;
+    }
+    global mSeg = [];
+    for (line row of mechSegData()) {
+        line s = (line row as str).split(" ");
+        line nums = [];
+        repeat (line i to 5) {
+            line nums.append(num.parse(line s[line i + 4] as str));
+        }
+        global mSeg.append([line s[1], num.parse(line s[2] as str), line s[3], line s[4], vec(line nums[1] as num, line nums[2] as num, line nums[3] as num), line nums[4], line nums[5]]);
+    }
+    global mPart = [];
+    for (line row of mechPartData()) {
+        line p = (line row as str).split(" ");
+        line n = [];
+        repeat (line i to 16) {
+            line n.append(num.parse(line p[line i + 4] as str));
+        }
+        line pivot = vec(line n[1] as num, line n[2] as num, line n[3] as num);
+        line cx = vec(line n[4] as num, line n[5] as num, line n[6] as num);
+        line cy = vec(line n[7] as num, line n[8] as num, line n[9] as num);
+        line cz = vec(line n[10] as num, line n[11] as num, line n[12] as num);
+        line target = vec(line n[14] as num, line n[15] as num, line n[16] as num);
+        global mPart.append([line p[1], line p[2], num.parse(line p[3] as str), line p[4], line pivot, line cx, line cy, line cz, line n[13], line target]);
+    }
+    global mechLoaded = 1;
+}
+
+/** Index of the segment turned by joint `name` (0 if there is none). */
+function mechJointSeg(name: str): num {
+    repeat (line i to global mSeg.len()) {
+        if ((global mSeg[line i] as list)[3] as str == name) {
+            return line i;
+        }
+    }
+    return 0;
+}
+
+/** `v` turned by the rotation with columns cols[1..3]. */
+function rotApply(cols: list, v: vec): vec {
+    return (cols[1] as vec) * v.x + (cols[2] as vec) * v.y + (cols[3] as vec) * v.z;
+}
+
+/** The posed transform of every segment of mech m, in the mech frame: per
+ * segment [x col, y col, z col, translation]. */
+function mechSegments(m: num): list {
+    line joints = global mJoint[m] as list;
+    line out = [];
+    for (line s of global mSeg) {
+        line seg = line s as list;
+        line parent = line seg[2] as num;
+        if (line parent == 0) {
+            line out.append([vec(1, 0, 0), vec(0, 1, 0), vec(0, 0, 1), vec(0, 0, 0)]);
+            continue;
+        }
+        line P = line out[line parent] as list;
+        line a: num = line joints[line out.len() + 1] as num;
+        line c = num.cos(line a);
+        line sn = num.sin(line a);
+        // the joint's own rotation: about X or about Y
+        line rx = vec(1, 0, 0);
+        line ry = vec(0, line c, line sn);
+        line rz = vec(0, 0 - line sn, line c);
+        if (line seg[4] as str == "y") {
+            line rx = vec(line c, 0, 0 - line sn);
+            line ry = vec(0, 1, 0);
+            line rz = vec(line sn, 0, line c);
+        }
+        line piv = line seg[5] as vec;
+        line turned = line rx * line piv.x + line ry * line piv.y + line rz * line piv.z;
+        line t = rotApply(line P, line piv - line turned) + (line P[4] as vec);
+        line out.append([rotApply(line P, line rx), rotApply(line P, line ry), rotApply(line P, line rz), line t]);
+    }
+    return line out;
+}
+
+/** Draws mech m: every display goes to the origin and gets its part's matrix,
+ * interpolated over `dur` ticks. */
+function mechRender(m: num, dur: num = 0) {
+    line yaw = global mYaw[m];
+    line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
+    line U = vec(0, 1, 0);
+    line L = line U.cross(line F);
+    line W = [line L, line U, line F];
+    line segs = mechSegments(m);
+    line ids = global mAll[m] as list;
+    line spin = global mSpin[m];
+    line o = global mPos[m];
+    select entitiesByName(line ids as list[str]);
+    selectedEntity.teleport(loc(line o.x, line o.y, line o.z));
+    select reset;
+    repeat (line i to global mPart.len()) {
+        line id = line ids[line i] as str;
+        if (line id == "") {
+            continue;
+        }
+        line p = global mPart[line i] as list;
+        line S = line segs[line p[3] as num] as list;
+        line pivot = line p[5] as vec;
+        line cx = rotApply(line S, line p[6] as vec);
+        line cy = rotApply(line S, line p[7] as vec);
+        line cz = rotApply(line S, line p[8] as vec);
+        line t = rotApply(line S, line pivot) + (line S[4] as vec);
+        if (line p[4] as str == "aim") {
+            // +Y from this part's posed pivot to its posed target
+            line T = line segs[line p[9] as num] as list;
+            line b = rotApply(line T, line p[10] as vec) + (line T[4] as vec);
+            line cy = (line b - line t).setLength(1);
+            line cx = (vec(1, 0, 0) - line cy * line cy.x).setLength(1);
+            line cz = line cx.cross(line cy);
+        } else if (line p[4] as str == "spin_z") {
+            line c = num.cos(line spin);
+            line sn = num.sin(line spin);
+            line sx = line cx * line c + line cy * line sn;
+            line cy = line cy * line c - line cx * line sn;
+            line cx = line sx;
+        }
+        line wx = rotApply(line W, line cx);
+        line wy = rotApply(line W, line cy);
+        line wz = rotApply(line W, line cz);
+        line wt = rotApply(line W, line t);
+        select entitiesByName(line id);
+        selectedEntity.setDisplayTransformationMatrix([line wx.x, line wy.x, line wz.x, line wt.x, line wx.y, line wy.y, line wz.y, line wt.y, line wx.z, line wy.z, line wz.z, line wt.z, 0, 0, 0, 1]);
+        selectedEntity.setDisplayInterpolation(dur, 0);
+        select reset;
+    }
+}
+
+/** Spawns a mech with its origin at `at`, facing at's yaw, in the given
+ * armor paint and accent colors, standing in its rest pose. Returns its
+ * number. */
+function spawnMech(at: loc, paint: num, accent: num): num {
+    loadMechData();
+    dropStaleMechs();
+    line origin = loc(at.x, at.y, at.z, 0, 0);
+    line ids = [];
+    for (line pp of global mPart) {
+        line p = line pp as list;
+        line look = item("stone").setModel(line p[2] as str).setModelDataNumbers(paint, accent, type="Colors");
+        game.spawnItemDisplay(line origin, line look);
+        lastEntity.setDisplayTeleportDuration(1);
+        // Full brightness: the displays stand on the origin at ground level,
+        // where the light the game samples would be 0.
+        lastEntity.setDisplayBrightness(15, 15);
+        line ids.append(lastEntity.uuid);
+    }
+    global mechCount += 1;
+    global mAll.append(line ids);
+    global mPos.append(vec(at.x, at.y, at.z));
+    global mYaw.append(at.getCoordinate(coord="Yaw"));
+    line joints = [];
+    repeat (line i to global mSeg.len()) {
+        line joints.append(0);
+    }
+    global mJoint.append(line joints);
+    global mSpin.append(0);
+    global mOwner.append(default.uuid);
+    global mGone.append(0);
+    mechRender(global mechCount);
+    return global mechCount;
+}
+
+/** Spawns a mech 20 blocks in front of the player at their feet level, in
+ * the default colors, facing them (turned by `turn` degrees from that). */
+function spawnMechHere(turn: num = 0) {
+    line feet = default.location;
+    line yaw: num = line feet.getCoordinate(coord="Yaw");
+    line at = loc(line feet.x, line feet.y, line feet.z, 0, line yaw);
+    line at = line at.shiftInDirection(20, direction="Forward");
+    line at = loc(line at.x, line at.y, line at.z, 0, line yaw + 180 + turn);
+    line cols = mechDefaultColors();
+    line m = spawnMech(line at, line cols[1] as num, line cols[2] as num);
+    default.sendMessage(s"<gray>Mech <yellow>%var(m)</yellow> spawned. <yellow>@pose JOINT DEGREES</yellow> moves a joint.");
+}
+
+/** Removes the displays in `ids`. */
+function removeDisplays(ids: list) {
+    for (line id of ids) {
+        if (line id as str != "") {
+            select entitiesByName(line id as str);
+            selectedEntity.remove();
+            select reset;
+        }
+    }
+}
+
+/** Removes mech m; its slot stays (mGone 1) so later mechs keep their numbers. */
+function removeMech(m: num) {
+    if (global mGone[m] == 1) {
+        return;
+    }
+    removeDisplays(global mAll[m] as list);
+    global mAll[m] = [];
+    global mGone[m] = 1;
+}
+
+/** Removes every mech and empties the lists. */
+function clearMechs {
+    repeat (line m to global mechCount) {
+        removeMech(line m);
+    }
+    global mAll = [];
+    global mPos = [];
+    global mYaw = [];
+    global mJoint = [];
+    global mSpin = [];
+    global mOwner = [];
+    global mGone = [];
+    global mechCount = 0;
+}
+
+/** Forgets the mechs when their displays are gone (switching plot mode
+ * removes plot entities but keeps the globals). */
+function dropStaleMechs {
+    repeat (line m to global mechCount) {
+        if (global mGone[line m] == 0) {
+            select entitiesByName((global mAll[line m] as list)[1] as str);
+            if (!selectedEntity.exists()) {
+                select reset;
+                clearMechs();
+                return;
+            }
+            select reset;
+            return;
+        }
+    }
+}
+
+/** The mech nearest the player (0 if there is none). */
+function mechNear(): num {
+    line best = 0;
+    line bestD = 0;
+    line here = default.location;
+    line hv = vec(line here.x, line here.y, line here.z);
+    repeat (line m to global mechCount) {
+        if (global mGone[line m] == 0) {
+            line d = (global mPos[line m] - line hv).len();
+            if (line best == 0 || line d < line bestD) {
+                line best = line m;
+                line bestD = line d;
+            }
+        }
+    }
+    return line best;
+}
+
+/** Sets joint `name` of mech m to `deg` (clamped to its range) and redraws
+ * it over 5 ticks. Returns the angle set, or -999 for an unknown joint. */
+function mechPose(m: num, name: str, deg: num): num {
+    loadMechData();
+    line s = mechJointSeg(name);
+    if (line s == 0) {
+        return -999;
+    }
+    line seg = global mSeg[line s] as list;
+    line a = num.clamp(deg, line seg[6] as num, line seg[7] as num);
+    line joints = global mJoint[m] as list;
+    line joints[line s] = line a;
+    global mJoint[m] = line joints;
+    mechRender(m, 5);
+    return line a;
+}
+
+/** Puts every joint of mech m back to 0 and redraws it over 5 ticks. */
+function mechPoseReset(m: num) {
+    line joints = [];
+    repeat (line i to global mSeg.len()) {
+        line joints.append(0);
+    }
+    global mJoint[m] = line joints;
+    mechRender(m, 5);
+}
+
+/** The joint names, space separated (for the @pose help). */
+function mechJointNames(): str {
+    loadMechData();
+    line out = "";
+    for (line s of global mSeg) {
+        if ((line s as list)[3] as str != "-") {
+            line out = line out + " " + ((line s as list)[3] as str);
+        }
+    }
+    return line out;
+}

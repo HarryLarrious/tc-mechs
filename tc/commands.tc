@@ -1,0 +1,55 @@
+// Chat commands and the join event. Add new commands here: a project has one
+// command event.
+
+playerevent join {
+    packSend();
+}
+
+playerevent command {
+    line words = event.command.split(" ");
+    line cmd = (line words[1] as str).replace("@", "");
+    if (line cmd == "mech") {
+        // @mech [turn degrees]: spawns a mech facing you (turn 90 shows its side).
+        line turn = 0;
+        if (line words.len() >= 2) {
+            line turn = num.parse(line words[2] as str);
+        }
+        spawnMechHere(line turn);
+    } else if (line cmd == "clearmechs") {
+        clearMechs();
+        default.sendMessage(s"<gray>Mechs removed.");
+    } else if (line cmd == "pose") {
+        poseCommand(line words);
+    } else if (line cmd == "pack") {
+        packSend();
+    } else {
+        default.sendMessage(s"<gray>Commands: <yellow>@mech [turn]</yellow>, <yellow>@pose JOINT DEGREES</yellow>, <yellow>@pose reset</yellow>, <yellow>@clearmechs</yellow>, <yellow>@pack</yellow>");
+    }
+}
+
+/** @pose JOINT DEGREES | @pose reset: poses the nearest mech. */
+function poseCommand(words: list) {
+    line m = mechNear();
+    if (line m == 0) {
+        default.sendMessage(s"<gray>No mech here. <yellow>@mech</yellow> spawns one.");
+        return;
+    }
+    if (words.len() >= 2 && words[2] as str == "reset") {
+        mechPoseReset(line m);
+        default.sendMessage(s"<gray>Mech %var(m) back in its rest pose.");
+        return;
+    }
+    if (words.len() < 3) {
+        line names = mechJointNames();
+        default.sendMessage(s"<gray>Usage: <yellow>@pose JOINT DEGREES</yellow> or <yellow>@pose reset</yellow>. Joints:<white>%var(names)");
+        return;
+    }
+    line name = words[2] as str;
+    line a = mechPose(line m, line name, num.parse(words[3] as str));
+    if (line a == -999) {
+        line names = mechJointNames();
+        default.sendMessage(s"<red>No joint %var(name).</red> <gray>Joints:<white>%var(names)");
+        return;
+    }
+    default.sendMessage(s"<gray>Mech %var(m): %var(name) at %var(a)°.");
+}

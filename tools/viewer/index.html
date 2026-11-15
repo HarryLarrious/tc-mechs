@@ -36,7 +36,7 @@
     <label><input id="walk" type="checkbox"> Walk cycle <input id="level" type="checkbox" checked> Keep feet level</label>
     <label><input id="sweep" type="checkbox"> Turret sweep <input id="fire" type="checkbox"> Spin barrels</label>
     <label>Explode <input id="explode" type="range" min="0" max="1" step="0.01" value="0"></label>
-    <label><input id="damaged" type="checkbox"> Damaged models</label>
+    <label><input id="damaged" type="checkbox"> Damaged models <input id="player" type="checkbox" checked> Pilot</label>
     <label><input id="xray" type="checkbox"> Ghost armor (see mechanics)</label>
     <label>Armor <input id="paint" type="color"> Accent <input id="accent" type="color"></label>
     <div><button id="reset">Reattach all</button> <button data-v="front">Front</button> <button data-v="left">Left</button> <button data-v="right">Right</button> <button data-v="rear">Rear</button> <button data-v="top">Top</button></div>
@@ -62,15 +62,33 @@ renderer.setPixelRatio(devicePixelRatio);
 view.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x14161a);
-const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 100);
-camera.position.set(8.6, 4.8, 8.2);
+const K = spec.scale || 1;   // the mech's scale: camera, grid and explode distances follow it
+const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 100 * K);
+camera.position.set(8.6 * K, 4.8 * K, 8.2 * K);
 const controls = new OrbitControls(camera, renderer.domElement);
-const TARGET = new THREE.Vector3(0, 2.7, 0);
+const TARGET = new THREE.Vector3(0, 2.7 * K, 0);
 controls.target.copy(TARGET);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x404040, 1.5));
 const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(4, 7, 5); scene.add(sun);
 const fill = new THREE.DirectionalLight(0xaabbff, 0.5); fill.position.set(-5, 2, -3); scene.add(fill);
-scene.add(new THREE.GridHelper(10, 10, 0x3a3f48, 0x262a31));
+scene.add(new THREE.GridHelper(Math.ceil(10 * K), Math.ceil(10 * K), 0x3a3f48, 0x262a31));  // 1 m squares
+// A player sitting in the pilot's chair, for scale: Minecraft's sitting pose
+// with the hips on the seat, leaning back with the chair, eyes 1.03 m from
+// the hips along the back.
+const playerFig = new THREE.Group(); playerFig.matrixAutoUpdate = false; scene.add(playerFig);
+{
+  const mat = c => new THREE.MeshLambertMaterial({ color: c });
+  const part = (g, w, h, d, x, y, z, c) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c)); m.position.set(x, y, z); g.add(m); };
+  const upper = new THREE.Group(); upper.position.set(0, 0, -0.11); upper.rotation.x = -(spec.cockpit_recline || 0) * Math.PI / 180;
+  playerFig.add(upper);
+  part(upper, 0.5, 0.75, 0.25, 0, 0.405, 0, 0x3d7bd9);             // body
+  part(upper, 0.5, 0.5, 0.5, 0, 0.96, 0, 0xd9a066);                // head (eyes 1.03 from the hips)
+  for (const x of [-0.125, 0.125]) {
+    part(playerFig, 0.25, 0.25, 0.46, x, 0.125, 0.12, 0x2b3a67);   // thighs, forward
+    part(playerFig, 0.25, 0.42, 0.25, x, -0.06, 0.34, 0x2b3a67);   // shins, down
+  }
+  for (const x of [-0.33, 0.33]) part(playerFig, 0.16, 0.16, 0.5, x, 0.45, 0.02, 0x3d7bd9);  // arms, on the sticks
+}
 
 // textures and materials
 const loader = new THREE.TextureLoader();
@@ -149,7 +167,7 @@ function groundBody() {
 // parts
 const parts = {};
 const root = new THREE.Group(); scene.add(root);
-const center = new THREE.Vector3(0, 2.4, 0);
+const center = new THREE.Vector3(0, 2.4 * K, 0);
 const UP = new THREE.Vector3(0, 1, 0);
 for (const p of spec.parts) {
   const holder = new THREE.Group(); holder.matrixAutoUpdate = false;
@@ -163,9 +181,9 @@ for (const p of spec.parts) {
   const local = new THREE.Vector3((hb[0][0] + hb[1][0]) / 2, (hb[0][1] + hb[1][1]) / 2, (hb[0][2] + hb[1][2]) / 2);
   const dir = local.clone().applyMatrix4(rest).sub(center);
   if (p.group === "armor") dir.multiplyScalar(1.6);
-  if (p.group === "actuator") dir.x += p.pivot[0] >= 0 ? 0.5 : -0.5;
-  if (p.segment === "pelvis" && p.group !== "structure") dir.y += 1.2;
-  if (["torso", "hgun_l", "hgun_r", "lgun_l", "lgun_r"].includes(p.segment)) dir.y += 1.8;
+  if (p.group === "actuator") dir.x += (p.pivot[0] >= 0 ? 0.5 : -0.5) * K;
+  if (p.segment === "pelvis" && p.group !== "structure") dir.y += 1.2 * K;
+  if (["torso", "hgun_l", "hgun_r", "lgun_l", "lgun_r"].includes(p.segment)) dir.y += 1.8 * K;
   if (p.group === "weapon") dir.x *= 1.8;
   parts[p.id] = { p, holder, intact, dmg, rest, dir, broken: false };
 }
@@ -222,7 +240,7 @@ function toggleBreak(id) {
     const Q = parts[k]; Q.broken = breaking; rows[k].classList.toggle("off", breaking);
     if (breaking) {
       Q.pos = new THREE.Vector3(); Q.quat = new THREE.Quaternion(); Q.holder.matrix.decompose(Q.pos, Q.quat, new THREE.Vector3());
-      Q.vel = new THREE.Vector3(d.x * 2.5, 3, d.z * 2.5);
+      Q.vel = new THREE.Vector3(d.x * 2.5, 3, d.z * 2.5).multiplyScalar(Math.sqrt(K));
       Q.spin = new THREE.Vector3(Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3);
     }
   }
@@ -323,11 +341,14 @@ renderer.setAnimationLoop(() => {
     }
     P.holder.matrixWorldNeedsUpdate = true;
   }
+  playerFig.visible = document.getElementById("player").checked && !parts.torso_frame.broken;
+  if (playerFig.visible) playerFig.matrix.copy(segs.torso).multiply(new THREE.Matrix4().makeTranslation(...spec.cockpit_seat));
+  playerFig.matrixWorldNeedsUpdate = true;
   if (selected) { selBox.box.setFromObject(parts[selected].holder); selBox.visible = true; }
   controls.update(); renderer.render(scene, camera);
 });
 const VIEWS = { front:[0.8,3.2,10], left:[10.5,3.0,0.01], right:[-10.5,3.0,0.01], rear:[-0.8,3.6,-10], top:[0.01,12,0.3] };
-for (const b of document.querySelectorAll("[data-v]")) b.onclick = () => { camera.position.set(...VIEWS[b.dataset.v]); controls.target.copy(TARGET); };
+for (const b of document.querySelectorAll("[data-v]")) b.onclick = () => { camera.position.set(...VIEWS[b.dataset.v].map(v => v * K)); controls.target.copy(TARGET); };
 window.__viewer = { camera, controls, parts, pose, select, toggleBreak, VIEWS, TARGET };
 window.__ready = true;
 </script>
