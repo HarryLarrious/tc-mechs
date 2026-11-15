@@ -340,19 +340,13 @@ def ankle_motor():
 
 
 # ---------------------------------------------------------------- foot
-TOES = {"c": (0.0, 0.09, 0.84), "l": (0.40, 0.09, 0.66), "r": (-0.40, 0.09, 0.66)}
-HEEL = (0.0, 0.08, -0.54)
-
-
-def toe_root(tip):
-    return (tip[0] * 0.30, 0.22, 0.20)
-
-
-def toe_knuckle(root, tip):
-    return add(lerp(root, tip, 0.5), (Y, 0.035))
+TOE_HINGE_Z = 0.30     # toe plate hinge line (across the foot)
+HEEL_HINGE_Z = -0.42   # heel plate hinge line
 
 
 def foot():
+    """A broad, flat stomper: a sole frame with a hinged toe plate and heel
+    plate, each sprung by a pair of dampers, on rubber tread pads."""
     e = prism(ANKLE, "x", 0.13, 0.24, 12, "darksteel")                              # ankle hub
     e.append(beam(ANKLE, FOOT_HUB, 0.24, 0.22, "gunmetal"))                         # tarsus
     e.append(box((-0.22, 0.12, -0.20), (0.22, 0.32, 0.28), "gunmetal"))             # foot block
@@ -363,47 +357,59 @@ def foot():
     e.append(beam(ANKLE, lerp(ANKLE, B, 0.70), 0.12, 0.12, "darksteel"))
     e += clevis(B, norm(sub(ANKLE, B)), 0.20)
     e += pin(B, 0.18)
-    for tip in TOES.values():
-        root = toe_root(tip)
-        k = toe_knuckle(root, tip)
-        d = norm(sub(tip, root))
-        yaw = math.degrees(math.atan2(d[0], d[2]))
-        e.append(beam(root, k, 0.17, 0.16, "darksteel"))                            # proximal
-        e.append(beam(k, tip, 0.15, 0.14, "darksteel"))                             # distal
-        e.append(plate(k, (0.20, 0.13, 0.13), "steel", (0.0, round(yaw, 3), 0.0)))  # knuckle
-        e.append(beam(add(tip, (d, -0.05)), add(tip, (d, 0.13), (Y, -0.07)), 0.11, 0.08, "steel"))  # claw
-        e.append(plate(add(tip, (d, -0.07), (Y, -0.065)), (0.17, 0.05, 0.24), "rubber",
-                       (0.0, round(yaw, 3), 0.0)))                                   # pad
-    e.append(beam((0.0, 0.22, -0.16), HEEL, 0.15, 0.13, "darksteel"))               # heel spur
-    e.append(beam(add(HEEL, (Z, 0.04)), add(HEEL, (Z, -0.10), (Y, -0.05)), 0.10, 0.07, "steel"))  # heel claw
-    e.append(box((-0.09, 0.0, -0.56), (-0.09 + 0.18, 0.05, -0.34), "rubber"))       # heel pad
-    e.append(box((-0.20, 0.0, -0.14), (0.20, 0.12, 0.26), "rubber"))                # center pad
-    part(Part("foot", "Foot (three toes and a heel spur)", "structure", "shin", "foot", ANKLE,
-              150, 260, "fail", "Damaged toes cost grip and balance; at 0 the mech stumbles on every step",
+    # sole frame, toe plate and heel plate
+    e.append(box((-0.30, 0.07, HEEL_HINGE_Z), (0.30, 0.15, TOE_HINGE_Z), "darksteel"))
+    e.append(box((-0.32, 0.06, TOE_HINGE_Z + 0.02), (0.32, 0.17, 0.66), "darksteel"))
+    e.append(box((-0.28, 0.06, -0.60), (0.28, 0.17, HEEL_HINGE_Z - 0.02), "darksteel"))
+    for z, w in ((TOE_HINGE_Z, 0.70), (HEEL_HINGE_Z, 0.62)):
+        e += prism((0.0, 0.12, z), "x", 0.055, w, 10, "steel")                       # hinge barrels
+        for x in (-0.20, 0.0, 0.20):
+            e += prism((x, 0.12, z), "x", 0.065, 0.08, 10, "darksteel")              # hinge knuckles
+    for x0, x1 in ((-0.31, -0.02), (0.02, 0.31)):                                    # rubber tread pads
+        e.append(box((x0, 0.0, TOE_HINGE_Z + 0.03), (x1, 0.06, 0.64), "rubber"))
+        e.append(box((x0 + 0.02, 0.0, -0.40), (x1 - 0.02, 0.07, 0.28), "rubber"))
+        e.append(box((x0 + 0.04, 0.0, -0.58), (x1 - 0.04, 0.06, HEEL_HINGE_Z - 0.03), "rubber"))
+    # damper pairs from the foot block to the toe and heel plates
+    for s in (1, -1):
+        x = s * 0.37                                                                   # outside the armor
+        for top, mid, bot in (((x, 0.33, 0.04), (x, 0.24, 0.30), (x, 0.13, 0.50)),
+                              ((x, 0.31, -0.14), (x, 0.23, -0.36), (x, 0.13, -0.52))):
+            e.append(beam(top, mid, 0.07, 0.07, "darksteel"))                        # damper body
+            e.append(beam(mid, bot, 0.03, 0.03, "chrome"))                            # damper rod
+            lx0, lx1 = sorted((s * 0.27, s * 0.41))
+            e.append(box((lx0, bot[1] - 0.04, bot[2] - 0.04), (lx1, bot[1] + 0.03, bot[2] + 0.04), "steel"))  # lower lug
+        x0, x1 = sorted((s * 0.22, s * 0.41))
+        e.append(box((x0, 0.26, -0.18), (x1, 0.36, 0.08), "darksteel"))               # upper damper lugs
+    e.append(box((-0.10, 0.19, 0.28), (0.10, 0.22, 0.285), "glow", faces=("south",)))  # foot light
+    part(Part("foot", "Foot (sole, hinged toe and heel plates, dampers)", "structure", "shin", "foot", ANKLE,
+              150, 260, "fail", "Damaged dampers and plates cost grip and balance; at 0 the mech stumbles on every step",
               shield=["foot_armor"]), e)
 
 
 def foot_armor():
-    e = []
-    for name, tip in TOES.items():
-        root = toe_root(tip)
-        k = toe_knuckle(root, tip)
-        d = norm(sub(tip, root))
-        e.append(beam(add(lerp(root, k, 0.25), (Y, 0.10)), add(k, (Y, 0.10)), 0.21, 0.045, "armor"))   # rear cap
-        e.append(beam(add(k, (Y, 0.095), (d, -0.02)), add(tip, (Y, 0.085)), 0.19, 0.045, "armor"))     # front cap
-        e.append(beam(add(tip, (Y, 0.085), (d, -0.03)), add(tip, (d, 0.09), (Y, 0.0)), 0.17, 0.04, "armor"))  # nose
-        if name == "c":
-            e.append(beam(add(lerp(root, k, 0.35), (Y, 0.128)), add(k, (Y, 0.128)), 0.05, 0.02, "accent"))
-            e.append(beam(add(k, (Y, 0.122)), add(tip, (Y, 0.112)), 0.05, 0.02, "accent"))
+    e = [beam((0.0, 0.205, TOE_HINGE_Z + 0.02), (0.0, 0.17, 0.68), 0.68, 0.05, "armor"),   # toe cap
+         beam((0.0, 0.19, 0.68), (0.0, 0.06, 0.745), 0.66, 0.05, "armor"),                 # toe nose
+         beam((0.0, 0.20, HEEL_HINGE_Z - 0.01), (0.0, 0.15, -0.62), 0.58, 0.05, "armor"),  # heel guard
+         beam((0.0, 0.15, -0.62), (0.0, 0.06, -0.66), 0.56, 0.05, "armor")]                # heel bevel
+    for x in (-0.20, 0.20):
+        e.append(beam((x, 0.233, TOE_HINGE_Z + 0.05), (x, 0.20, 0.66), 0.06, 0.012, "accent"))  # stripes
+        for z in (0.40, 0.60):
+            e.append(box((x + 0.07, 0.225 - (z - 0.32) * 0.1, z - 0.02), (x + 0.11, 0.24 - (z - 0.32) * 0.1, z + 0.02),
+                         "steel"))                                                       # bolts
+    n = norm((0.0, 0.065, 0.13))                                                         # toe nose outward normal
+    e.append(beam(add((0.0, 0.165, 0.692), (n, 0.028)), add((0.0, 0.085, 0.732), (n, 0.028)), 0.40, 0.008, "hazard"))
+    for s in (1, -1):
+        x0, x1 = sorted((s * 0.22, s * 0.245))
+        e.append(box((x0, 0.15, -0.20), (x1, 0.26, 0.26), "armor"))                     # side plates
     # instep plate over the front of the tarsus
     t = norm(sub(FOOT_HUB, ANKLE))
     n = (0.0, t[2], -t[1])
     if n[2] < 0:
         n = tuple(-c for c in n)
     e.append(beam(add(ANKLE, (t, 0.08), (n, 0.135)), add(FOOT_HUB, (n, 0.14), (Y, 0.08)), 0.30, 0.04, "armor"))
-    e.append(box((-0.24, 0.30, 0.10), (0.24, 0.34, 0.30), "armor"))                 # toe-box cap
-    part(Part("foot_armor", "Foot armor (toe caps, instep)", "armor", "foot", "foot", ANKLE,
-              35, 150, "detach", "Torn off: the toes take hits directly"), e)
+    e.append(box((-0.24, 0.30, 0.10), (0.24, 0.34, 0.30), "armor"))                 # foot block cap
+    part(Part("foot_armor", "Foot armor (toe cap, heel guard, side plates)", "armor", "foot", "foot", ANKLE,
+              45, 170, "detach", "Torn off: the toe and heel plates and the dampers take hits directly"), e)
 
 
 # ---------------------------------------------------------------- pistons

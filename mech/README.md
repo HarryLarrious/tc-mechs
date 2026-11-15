@@ -6,7 +6,7 @@ are two heavy rotary cannons on the sides of the torso and two light machine
 guns on the roof, and each gun is its own set of parts.
 
 It has 62 parts (6 in the pelvis, 19 in each leg, 8 in the torso, 10 in the
-guns) and weighs 6366 kg. [PARTS.md](PARTS.md) lists every part.
+guns) and weighs 6386 kg. [PARTS.md](PARTS.md) lists every part.
 
 ## Frame and placement
 
@@ -97,7 +97,9 @@ right-hand guns are the left-hand ones mirrored.
 ## Leg
 
 The hip is 3.0 m above the ground. The knee points forward, and the ankle is
-behind the hip, above a three-toed foot with a heel spur.
+behind the hip, above a broad, flat foot: a sole frame with a hinged toe plate
+and heel plate, each sprung by a pair of dampers on the outside of the foot,
+on split rubber tread pads.
 
 Each joint has both an electric motor and an air piston:
 
@@ -119,7 +121,7 @@ The armor is bolted plates with accent stripes and warning plates:
 - thigh plates (front, sides),
 - a rounded knee cap,
 - a two-piece greave with side wings,
-- toe caps and an instep plate.
+- a toe cap with a striped nose, a heel guard, side plates and an instep plate.
 
 Armor parts break off (`detach`). Each one shields the part under it.
 

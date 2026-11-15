@@ -198,7 +198,7 @@
   "#e0761c"
  ],
  "damage_state": "custom_model_data string 0 = \"damaged\" swaps to the _damaged model",
- "total_mass": 6366.2,
+ "total_mass": 6386.2,
  "parts": [
   {
    "id": "pelvis",
@@ -882,7 +882,7 @@
   },
   {
    "id": "foot_l",
-   "label": "Foot (three toes and a heel spur) (left)",
+   "label": "Foot (sole, hinged toe and heel plates, dampers) (left)",
    "group": "structure",
    "parent": "shin_l",
    "segment": "foot_l",
@@ -901,29 +901,29 @@
    "mass": 150,
    "hp": 260,
    "on_break": "fail",
-   "effect": "Damaged toes cost grip and balance; at 0 the mech stumbles on every step",
+   "effect": "Damaged dampers and plates cost grip and balance; at 0 the mech stumbles on every step",
    "shield": [
     "foot_armor_l"
    ],
    "damaged_model": true,
    "hitbox": [
     [
-     -0.524,
-     -0.664,
+     -0.41,
+     -0.62,
      -0.423
     ],
     [
-     0.524,
+     0.41,
      0.432,
-     1.288
+     0.96
     ]
    ],
    "links": {},
-   "elements": 49
+   "elements": 94
   },
   {
    "id": "foot_armor_l",
-   "label": "Foot armor (toe caps, instep) (left)",
+   "label": "Foot armor (toe cap, heel guard, side plates) (left)",
    "group": "armor",
    "parent": "foot_l",
    "segment": "foot_l",
@@ -939,26 +939,26 @@
     0.0
    ],
    "anim": "fixed",
-   "mass": 35,
-   "hp": 150,
+   "mass": 45,
+   "hp": 170,
    "on_break": "detach",
-   "effect": "Torn off: the toes take hits directly",
+   "effect": "Torn off: the toe and heel plates and the dampers take hits directly",
    "shield": [],
    "damaged_model": true,
    "hitbox": [
     [
-     -0.525,
-     -0.565,
-     0.142
+     -0.34,
+     -0.571,
+     -0.383
     ],
     [
-     0.525,
+     0.34,
      0.041,
-     1.242
+     1.067
     ]
    ],
    "links": {},
-   "elements": 13
+   "elements": 15
   },
   {
    "id": "hip_piston_cyl_l",
@@ -1682,7 +1682,7 @@
   },
   {
    "id": "foot_r",
-   "label": "Foot (three toes and a heel spur) (right)",
+   "label": "Foot (sole, hinged toe and heel plates, dampers) (right)",
    "group": "structure",
    "parent": "shin_r",
    "segment": "foot_r",
@@ -1701,29 +1701,29 @@
    "mass": 150,
    "hp": 260,
    "on_break": "fail",
-   "effect": "Damaged toes cost grip and balance; at 0 the mech stumbles on every step",
+   "effect": "Damaged dampers and plates cost grip and balance; at 0 the mech stumbles on every step",
    "shield": [
     "foot_armor_r"
    ],
    "damaged_model": true,
    "hitbox": [
     [
-     -0.524,
-     -0.664,
+     -0.41,
+     -0.62,
      -0.423
     ],
     [
-     0.524,
+     0.41,
      0.432,
-     1.288
+     0.96
     ]
    ],
    "links": {},
-   "elements": 49
+   "elements": 94
   },
   {
    "id": "foot_armor_r",
-   "label": "Foot armor (toe caps, instep) (right)",
+   "label": "Foot armor (toe cap, heel guard, side plates) (right)",
    "group": "armor",
    "parent": "foot_r",
    "segment": "foot_r",
@@ -1739,26 +1739,26 @@
     0.0
    ],
    "anim": "fixed",
-   "mass": 35,
-   "hp": 150,
+   "mass": 45,
+   "hp": 170,
    "on_break": "detach",
-   "effect": "Torn off: the toes take hits directly",
+   "effect": "Torn off: the toe and heel plates and the dampers take hits directly",
    "shield": [],
    "damaged_model": true,
    "hitbox": [
     [
-     -0.525,
-     -0.565,
-     0.142
+     -0.34,
+     -0.571,
+     -0.383
     ],
     [
-     0.525,
+     0.34,
      0.041,
-     1.242
+     1.067
     ]
    ],
    "links": {},
-   "elements": 13
+   "elements": 15
   },
   {
    "id": "hip_piston_cyl_r",
