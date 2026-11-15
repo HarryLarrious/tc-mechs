@@ -3,10 +3,15 @@
 // (gait.tc), parked on one knee without a pilot.
 //
 // A mech is mechPartCount() item displays, one per part (mech_data.tc). All
-// of them stand on the mech origin (on the ground midway between the hips,
-// raised or lowered by the gait's body height) and get the matrix:
+// of them stand on one anchor point and get the matrix
 //
-//   heading * segment(pose) * translate(pivot) * rotate(rest)
+//   translate(origin - anchor) * heading * segment(pose) * translate(pivot) * rotate(rest)
+//
+// where the origin is on the ground midway between the hips, raised or
+// lowered by the gait's body height. The anchor is mechAnchorUp() above the
+// ground, in the air: occlusion culling mods (Entity Culling, Sodium) hide an
+// entity whose position is out of sight, and the origin is often inside the
+// ground (crouched or kneeling). The displays' culling box covers the mech.
 //
 // Segments hang off each other by joints (mechSegData): the legs on hinges
 // about X, the torso about Y on the waist ring, the guns about X. An "aim"
@@ -22,7 +27,9 @@
 // displays without the spawn location's yaw, so the heading goes into the
 // matrix too.
 //
-// The roof hatch ("hinge_x") turns about its hinge's X by mHatch (pilot.tc).
+// The roof hatch ("hinge_x") turns about its hinge's X by mHatch, and the
+// boarding ladder's drop section ("extend_y") is scaled down from its top by
+// mLadder (pilot.tc).
 
 /** Display UUIDs of each mech's parts, in mechPartData order, and the same
  * UUIDs by draw group (mGroup order). */
@@ -63,7 +70,7 @@ declare global mechLoaded: num;
 
 /** The parsed data's current version. */
 function mechDataVersion(): num {
-    return 7;
+    return 8;
 }
 
 /** Parses the generated data once. */
@@ -113,7 +120,22 @@ function loadMechData {
             global mPartGroup.append(global mGroup.len());
         }
     }
+    loadPilotPath();
     global mechLoaded = mechDataVersion();
+}
+
+/** How far above the ground the displays' anchor is (m), and the size of
+ * their culling box (width, height, from the anchor up). */
+function mechAnchorUp(): num {
+    return 1;
+}
+
+function mechCullWidth(): num {
+    return 15;
+}
+
+function mechCullHeight(): num {
+    return 12;
 }
 
 /** Index of the segment turned by joint `name` (0 if there is none). */
@@ -176,14 +198,17 @@ function mechRender(m: num, dur: num = 0) {
     line segs = mechSegments(m);
     line spin = global mSpin[m];
     line o = global mPos[m];
+    // displays on the anchor; the matrices add the origin's offset from it
+    line up = global gBodyY[m] - mechAnchorUp();
     select entitiesByName(global mAll[m] as list[str]);
-    selectedEntity.teleport(loc(line o.x, line o.y + global gBodyY[m], line o.z));
+    selectedEntity.teleport(loc(line o.x, line o.y + mechAnchorUp(), line o.z));
     select reset;
     // the pilot's body and seat ride with the torso (pilot.tc)
     if (global mPilot[m] != "") {
         pilotRender(m, line W, line segs[(global gSegs[7] as num)] as list, vec(line o.x, line o.y + global gBodyY[m], line o.z));
     }
     line hatch = global mHatch[m];
+    line ladder = global mLadder[m];
     line gids = global mGroupIds[m] as list;
     repeat (line i to global mGroup.len()) {
         line p = global mGroup[line i] as list;
@@ -213,11 +238,14 @@ function mechRender(m: num, dur: num = 0) {
             line hy = line cy * line c + line cz * line sn;
             line cz = line cz * line c - line cy * line sn;
             line cy = line hy;
+        } else if (line p[2] as str == "extend_y") {
+            // the ladder's drop section: scaled down from its top
+            line cy = line cy * line ladder;
         }
         line wx = rotApply(line W, line cx);
         line wy = rotApply(line W, line cy);
         line wz = rotApply(line W, line cz);
-        line wt = rotApply(line W, line t);
+        line wt = rotApply(line W, line t) + vec(0, line up, 0);
         select entitiesByName(line gids[line i] as list[str]);
         selectedEntity.setDisplayTransformationMatrix([line wx.x, line wy.x, line wz.x, line wt.x, line wx.y, line wy.y, line wz.y, line wt.y, line wx.z, line wy.z, line wz.z, line wt.z, 0, 0, 0, 1]);
         selectedEntity.setDisplayInterpolation(dur, 0);
@@ -241,6 +269,8 @@ function spawnMech(at: loc, paint: num, accent: num): num {
         // Full brightness: the displays stand on the origin at ground level,
         // where the light the game samples would be 0.
         lastEntity.setDisplayBrightness(15, 15);
+        lastEntity.setDisplayCullingSize(mechCullWidth(), mechCullHeight());
+        lastEntity.setDisplayViewRange(160);
         line ids.append(lastEntity.uuid);
     }
     line gids = [];
@@ -275,6 +305,8 @@ function spawnMech(at: loc, paint: num, accent: num): num {
     global mBody.append([]);
     global mHatch.append(0);
     global mHatchTo.append(0);
+    global mLadder.append(ladderStowed());
+    global mLadderTo.append(ladderStowed());
     gaitInit(global mechCount);
     mechRender(global mechCount);
     ensureMechLoop();
@@ -342,6 +374,8 @@ function clearMechs {
     global mBody = [];
     global mHatch = [];
     global mHatchTo = [];
+    global mLadder = [];
+    global mLadderTo = [];
     global mechCount = 0;
 }
 

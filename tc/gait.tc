@@ -33,7 +33,7 @@
 // * Parked: without a pilot and with nothing to do it stops, then goes down
 //   on one knee (the legs blend into mechKneelPose, the body drops
 //   gKneelDrop); it stands up again to walk. Boarding and getting out
-//   (pilot.tc) kneel it too.
+//   (pilot.tc) kneel it too, and open its hatch and drop its ladder.
 //
 // Sizes in meters (mechGait is at real size), angles in degrees.
 
@@ -562,6 +562,7 @@ function gaitTick(m: num) {
     // parked without a pilot and with nothing to do
     line boardKneel = pilotBoardTick(m);
     global mHatch[m] = approach(global mHatch[m], global mHatchTo[m], hatchRate());
+    global mLadder[m] = approach(global mLadder[m], global mLadderTo[m], ladderRate());
     line kneelTo = 0;
     if (global mPilot[m] != "") {
         line kneelTo = line boardKneel;
@@ -856,7 +857,7 @@ function gaitTick(m: num) {
     // redrawing it (its feet are still checked every half second)
     line still = 0;
     if (line speed == 0 && line turn == 0 && global gWantSpeed[m] == 0 && global gWantTurn[m] == 0 && line follow == "" && global mPilot[m] == "") {
-        if (line swT[1] as num < 0 && line swT[2] as num < 0 && global gDip[m] == 0 && num.abs(wrapDeg(line aimAt - line aim)) < 0.5 && line k == line kneelTo && global mHatch[m] == global mHatchTo[m] && global mBoard[m] == 0) {
+        if (line swT[1] as num < 0 && line swT[2] as num < 0 && global gDip[m] == 0 && num.abs(wrapDeg(line aimAt - line aim)) < 0.5 && line k == line kneelTo && global mHatch[m] == global mHatchTo[m] && global mLadder[m] == global mLadderTo[m] && global mBoard[m] == 0) {
             line still = 1;
         }
     }

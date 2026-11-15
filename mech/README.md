@@ -114,10 +114,19 @@ glass.
 reclined player there for scale. In game the pilot is a drawn body that
 reclines with the chair (see [Pilot model](#pilot-model)).
 
-The roof hatch (`hatch`, over the ladder at the back of the cabin) is a
-separate part on a hinge along its back edge. It turns about its own X axis
-(anim `hinge_x`): 0° is shut, -110° is open. The ceiling and roof plates have
-a matching square hole.
+The roof hatch (`hatch`, at the back of the cabin) is a separate part on a
+hinge along its front edge. It turns about its own X axis (anim `hinge_x`):
+0° is shut, 110° is open, with the lid standing up in front of the hole so
+the way in from the back is clear. The ceiling and roof plates have a
+matching square hole.
+
+The boarding ladder is on the back of the ammo bustle. `ladder` is the fixed
+upper section: two rails on standoffs from the leaning rear plate, rungs,
+grab handles that curve over the bustle lid, and a tray under the bustle.
+`ladder_drop` hangs below it from the tray, down to just above the ground
+under a kneeling mech. It is scaled along its own Y from its top (anim
+`extend_y`): 3% stowed in the tray, 100% deployed. Its rungs are 0.3 m apart,
+counted up from that ground, so the pilot's hands and feet land on them.
 
 | Part | What it is |
 | --- | --- |
@@ -125,7 +134,9 @@ a matching square hole.
 | `cockpit` | Reclined pilot's chair, two joysticks, three screens |
 | `torso_front` | Lower and upper glacis that meet in a beak around the viewport, angled cheeks, accent stripes |
 | `torso_top` | Roof with raised panels, a hatch hole in a warning ring, and edge chamfers |
-| `hatch` | The roof hatch: armored lid with a handle and hinge knuckles, opens on its hinge |
+| `hatch` | The roof hatch: armored lid with a handle and hinge knuckles, opens forward on its hinge |
+| `ladder` | Boarding ladder, upper section: rails, rungs, grab handles over the lid, the tray |
+| `ladder_drop` | Boarding ladder, drop section: slides down out of the tray to the ground when the mech kneels |
 | `torso_side_l`, `torso_side_r` | Sloped side slabs (top leaning in) and lower skirts. Each comes off on its own |
 | `sensors` | Viewport visor with a running light under it, and a twin-lens camera pod and rangefinder on the roof |
 | `ammo_bustle` | Armored magazine behind the hull, with feed chutes running to both heavy gun mounts |
@@ -318,17 +329,26 @@ can now swing to -105°.
 `@board` starts boarding the nearest free mech within 30 blocks
 (`tc/pilot.tc`). It is a sequence:
 
-1. Your pilot body appears where you stand and the real you is hidden. The
-   mech kneels and opens its roof hatch.
-2. You are lifted in an arc to above the hatch, down through it into the
-   cabin, and forward into the chair (2.5 s).
-3. The hatch shuts.
+1. Your pilot body appears where you stand and the real you is hidden. You
+   walk to the foot of the ladder at the mech's back while the mech kneels,
+   turns its turret ahead, opens its hatch and drops its ladder.
+2. You climb (8 s): hand over hand up the rungs, over the grab handles onto
+   the ammo bustle, two steps to the hatch, sit on its rim, lower yourself in
+   onto the cabin floor, and slide forward into the chair.
+3. The hatch shuts and the ladder slides back up.
 4. The mech stands up, and you have the controls.
 
-Getting out (F or `@exit`) runs it backwards: the mech kneels, the hatch
-opens, you go up out of it and down in an arc to the ground on the mech's
-left, and your real body comes back there. The hatch then shuts and the mech
-stays parked.
+Getting out (F or `@exit`) runs it backwards: the mech kneels, opens up, and
+you climb out and down the ladder. Your real body comes back at its foot, and
+the mech stays parked.
+
+The climb is a timeline baked by `pack/src/mech_pilot.py`
+(`board_timeline`): 10 samples a second of the figure's hips, lean, feet and
+hands, in the mech frame with the mech kneeling. On the ladder each limb
+holds a rung for half a cycle and then moves up two rungs, a foot with the
+opposite hand. The rest is keyframes. The last sample is the seated pose.
+The game plays it through the torso's transform, and the viewer's "Board"
+and "Get out" buttons play the same timeline.
 
 | Control | What it does |
 | --- | --- |
@@ -353,14 +373,17 @@ a head as another body part when the display's brightness marks it (sky
 light 0, block light = part id: 1 head, 2 torso, 3 and 4 right and left arm,
 5 and 6 right and left leg).
 
-The torso, arms and legs are posed in their item models, reclined in the
-chair with the hands on the joysticks. Their displays take the torso
-segment's matrix, so they turn with the turret. The head is posed every tick
-to look where you look (within what a neck allows). Along the boarding path
-the whole body moves by an offset, in its seated pose.
+Every part holds the same item (`mech:pilot/unit`, a head as a 1 x 1 x 1
+box) and is posed every tick from a figure pose: the hips, the body's lean,
+and where the feet and hands are. Each limb is a straight Minecraft limb
+from its hip or shoulder to its end point, stretched a little to reach, with
+its front turned the least way from hanging straight down. Seated, the body
+reclines with the chair and the hands are on the joysticks. The head looks
+where you look, within what a neck allows. The walk to the ladder is posed
+live, with the legs and arms swinging.
 
 You ride the mech's seat entity, placed every tick so your eye is at the
-model head's center (`tc/pilot_data.tc` gives the pose). The shader drops the
+model head's center (`tc/pilot_data.tc` gives the timeline). The shader drops the
 head when the camera is inside it, so in first person you see your arms on
 the sticks. The real player is hidden from the others (Set Entity Hidden),
 from yourself in third person (invisibility), and your hand item draws
@@ -374,7 +397,7 @@ forward and back, A and D turn, and the camera follows the mech. "Feet level"
 keeps the ankles flat. "Turret sweep" swings the torso and aims the guns, and
 "Spin barrels" turns the heavy barrel clusters. "Parked (kneel)" blends the
 mech down on one knee and back, "Hatch open" opens the roof hatch, and a
-reclined pilot figure sits in the chair.
+posed pilot figure sits in the chair. "Board" and "Get out" play the climb.
 
 ## Not done yet
 
@@ -395,3 +418,11 @@ then sets each display's matrix to
 `heading * segment * translate(pivot) * rotate(rest)`. Pistons are aimed at
 their posed targets and the heavy barrels get their spin angle. This is the
 same math as the viewer.
+
+The displays do not stand on the origin itself, which is often inside the
+ground (crouched or kneeling). They stand on an anchor 1 m above the ground,
+and their matrices add the origin's offset from it. Their culling box (15 m
+wide, 12 m tall) covers the whole mech. Occlusion culling mods (Entity
+Culling, Sodium) hide an entity whose position is out of sight, so with the
+displays on the buried origin the whole mech could vanish. The pilot body is
+anchored the same way, just above its soles.

@@ -53,12 +53,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from mech_lib import (MATERIALS, MODEL_SCALE, NS, ROOT, TINTS, Elem, Part, beam, box, hitbox,  # noqa: E402
+from mech_lib import (GAIT, MATERIALS, MODEL_SCALE, NS, ROOT, TINTS, Elem, Part, beam, box, hitbox,  # noqa: E402
                       KNEEL_POSE, MECH_SCALE, PROBES, gait_scaled, mirror_x, no_dent, plate, prism, ring_x, scale_part, to_local,
                       write_models, write_textures)
 from mech_pelvis import pelvis_parts  # noqa: E402
-from mech_torso import EYE as PILOT_EYE, HATCH_Z, HIPS_Z, RECLINE, ROOF_Y, SEAT, pilot_grips, torso_parts  # noqa: E402
-from mech_pilot import write_pilot  # noqa: E402
+from mech_torso import (EYE as PILOT_EYE, FLOOR_Y, HATCH_HALF, HATCH_Z, HIPS_Z, LADDER_STEP, LADDER_Z,  # noqa: E402
+                        RECLINE, ROOF_Y, SEAT, pilot_grips, torso_parts)  # noqa: E402
+from mech_pilot import board_timeline, write_pilot  # noqa: E402
 
 HIP_X = 0.75      # hip joint offset from the centerline (mech frame, before MECH_SCALE)
 SIDES = {"l": (1, "left"), "r": (-1, "right")}
@@ -590,6 +591,16 @@ def rest_cols(rest) -> list[float]:
     return [R[i][j] for j in range(3) for i in range(3)]
 
 
+def board_path() -> list:
+    """The boarding timeline (mech_pilot.py) for this mech's ladder and cabin."""
+    k = MECH_SCALE
+    geom = {"ground": GAIT["kneel_drop"] * k, "rung_z": LADDER_Z * k, "rung_step": LADDER_STEP,
+            "lid": 4.76 * k, "handle_top": 4.96 * k, "roof": 4.86 * k, "roof_back": -0.95 * k,
+            "hole": ((HATCH_Z - HATCH_HALF) * k, (HATCH_Z + HATCH_HALF) * k), "floor": FLOOR_Y * k}
+    return board_timeline(geom, tuple(c * k for c in SEAT), RECLINE, HIPS_Z,
+                          [tuple(c * k for c in g) for g in pilot_grips()])
+
+
 def write_tc_data(spec) -> None:
     """tc/mech_data.tc: the segments, joints and parts for the plot code."""
     segs = spec["segments"]
@@ -626,7 +637,7 @@ def write_tc_data(spec) -> None:
         f"/** Number of segments. */\nfunction mechSegCount(): num {{\n    return {len(segs)};\n}}\n\n"
         "/** The mech's parts in spawn order, each \"id itemModel seg anim px py pz\n"
         " * xx xy xz yx yy yz zx zy zz tseg tx ty tz\": the segment index the part\n"
-        " * rides, its anim (fixed, aim, spin_z), its pivot (mech frame at rest),\n"
+        " * rides, its anim (fixed, aim, spin_z, hinge_x, extend_y), its pivot (mech frame at rest),\n"
         " * the columns of its rest rotation, and for aim parts the segment and\n"
         " * rest point its +Y aims at (tseg 0 otherwise). */\n"
         "function mechPartData(): list {\n    return [\n        " + ind.join(part_rows) + "\n    ];\n}\n\n"
@@ -666,7 +677,7 @@ def main():
     build_leg()
     pelvis = pelvis_parts(HIP_X)
     legs = place_leg("l") + place_leg("r")
-    torso, guns, torso_segs, torso_joints = torso_parts()
+    torso, guns, torso_segs, torso_joints = torso_parts(GAIT["kneel_drop"])
     folders = [("pelvis", pelvis), ("leg", legs), ("torso", torso), ("guns", guns)]
     allp = pelvis + legs + torso + guns
     for p in allp:
@@ -719,6 +730,7 @@ def main():
         "cockpit_recline": RECLINE,
         "gait": gait_scaled(),
         "kneel_pose": KNEEL_POSE,
+        "board_path": board_path(),
         "probes": [[f, round(x * MECH_SCALE, 4), round(y * MECH_SCALE, 4), round(z * MECH_SCALE, 4)]
                    for f, x, y, z in PROBES],
         "segments": segments,
@@ -727,7 +739,9 @@ def main():
                   "aim": "at its pivot on its segment, local +Y aimed at links.to on links.to_segment (pistons)",
                   "spin_z": "rigid with its segment, then turned about its own local Z (heavy gun barrels)",
                   "hinge_x": "rigid with its segment, then turned about its own local X at its pivot (the "
-                             "roof hatch; negative opens it)"},
+                             "roof hatch, hinged at its front edge; positive opens it)",
+                  "extend_y": "rigid with its segment, then scaled along its own local Y from its pivot by the "
+                              "deploy fraction (the boarding ladder's drop section, hanging down from its top)"},
         "tints": {"0": "armor paint", "1": "accent (stripes, trims, air tanks)"},
         "tint_defaults": ["#%06x" % t["default"] for t in TINTS],
         "damage_state": "custom_model_data string 0 = \"damaged\" swaps to the _damaged model",
@@ -746,8 +760,8 @@ def main():
     (ROOT / "mech/parts.json").write_text(json.dumps(spec, indent=1) + "\n")
     write_table(spec)
     write_tc_data(spec)
-    write_pilot(tuple(c * MECH_SCALE for c in SEAT), RECLINE, HIPS_Z,
-                [tuple(c * MECH_SCALE for c in g) for g in pilot_grips()])
+    first = spec["board_path"][0]
+    write_pilot(spec["board_path"], (0.0, first[5], first[6]))
     viewer = ROOT / "tools/viewer"
     viewer.mkdir(parents=True, exist_ok=True)
     (viewer / "mech_data.js").write_text("// Generated by pack/src/mech_parts.py. Do not edit.\nwindow.MECH = "

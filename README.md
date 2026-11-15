@@ -61,8 +61,8 @@ In game (play mode):
 | `@turn [deg/s]` | The nearest mech turns on the spot (30°/s by default, up to 40; + right) |
 | `@stop` | The nearest mech stops; its feet settle under it and it kneels (parked) |
 | `@follow` | The nearest mech walks after you and aims its torso and guns at you; `@follow` again or `@stop` ends it |
-| `@board` | Boards the nearest free mech within 30 blocks: it kneels, opens its hatch and lifts you in, then stands up. W/S walk, A/D turn, look to aim the turret and guns, F gets out |
-| `@exit` | Gets out of the mech you pilot (same as F): it kneels and puts you on the ground on its left |
+| `@board` | Boards the nearest free mech within 30 blocks: you walk to it while it kneels, opens its hatch and drops its ladder, climb up its back and in through the hatch, then it stands up. W/S walk, A/D turn, look to aim the turret and guns, F gets out |
+| `@exit` | Gets out of the mech you pilot (same as F): it kneels and you climb out and down its ladder |
 | `@pose JOINT DEGREES` | Moves a joint on the nearest mech: `hip_l`, `knee_l`, `ankle_l`, `hip_r`, `knee_r`, `ankle_r`, `waist`, `elev_hl`, `elev_hr`, `elev_ll`, `elev_lr` |
 | `@pose reset` | Puts the nearest mech back in its rest pose |
 | `@clearmechs` | Removes every mech |
