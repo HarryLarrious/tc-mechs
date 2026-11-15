@@ -15,9 +15,9 @@ inside it).
 
 Boarding is baked here as a timeline of figure poses in the mech frame at
 rest (with the mech kneeling and the turret facing ahead), BOARD_RATE samples
-a second: from standing in front of the kneeling mech's front (right) foot,
-up onto its toe and the top of the foot, hand over hand up the shin to the
-knee guard, up the torso front onto the roof, back along the roof outside
+a second: from standing beside the kneeling mech's front (right) leg, a jump
+up to grab the head of its knee piston, a pull-up onto the piston, up onto
+the knee guard, up the torso front onto the roof, back along the roof outside
 the right light gun, onto the hatch's side rim, down into the cabin, turn to
 face ahead and slide forward into the chair. Its last sample is the seated
 pose (hands on the joysticks). Getting out plays it backwards. The walk from
@@ -136,21 +136,21 @@ def pose(seat, recline, hips_z, grips):
 
 
 BOARD_RATE = 10        # timeline samples per second
-CLIMB_SPEED = 1.6      # m/s up a climbing face
 HIP_H = 12 * PX        # hips above the soles, standing
 SHOULDER_H = 10 * PX   # shoulder pivots above the hips
 
 # The climb up the front (right) leg of the kneeling mech: holds measured off
 # the kneeling model in the viewer (raycasts), as heights above the ground
-# and z in the mech frame (m). The pilot climbs the leg's outer half, x = LANE.
-LANE = -1.50           # x of the climb and of the walk along the roof
-TOE = (0.42, 3.9)      # top of the toe plates (height, z)
-FOOT = (1.18, 2.86)    # top of the foot over the ankle
-SHIN_Z = 2.50          # the shin and knee guard's front face
-KNEE = (5.10, 2.28)    # top of the knee guard: a ledge
-FRONT_Z = 2.06         # the torso's front face above it
-ROOF_EDGE_Z = 1.95     # where the roof starts at the front
-WALK_X = -1.55         # along the roof, outside the right light gun
+# and x, z in the mech frame (m).
+PISTON = (-2.21, 3.67, 2.31)   # the knee piston's head (cylinder end), on the leg's outboard side
+PISTON_TOP = 3.92              # top of the cylinder near its head
+JUMP_FROM = (-2.95, 2.35)      # where the jump starts (x, z), facing the piston (+X)
+KNEE_SIDE_X = -2.00            # the knee guard's and thigh's outboard face
+LANE = -1.50                   # x of the knee top, the torso front climb and the walk's start
+KNEE = (5.10, 2.28)            # top of the knee guard: a ledge
+FRONT_Z = 2.06                 # the torso's front face above it
+ROOF_EDGE_Z = 1.95             # where the roof starts at the front
+WALK_X = -1.55                 # along the roof, outside the right light gun
 
 
 def board_timeline(g: dict, seat, recline, hips_z, grips) -> list[list[float]]:
@@ -186,53 +186,54 @@ def board_timeline(g: dict, seat, recline, hips_z, grips) -> list[list[float]]:
 
     keys = []                                          # (seconds to get here, frame)
     face = 180.0                                       # facing the mech's front: toward -Z
+    side_ = 90.0                                       # facing the leg's outboard side: toward +X
+    jx, jz = JUMP_FROM
+    px_, ph, pz = PISTON
+    # facing +X the body's left is -Z
+    keys.append((0.0, stand(jx, jz, 0.0, side_)))
+    # crouch, arms back
+    keys.append((0.3, frame(P(jx - 0.05, HIP_H - 0.28, jz), 20, side_, P(jx + 0.05, 0.0, jz - 0.12), P(jx + 0.05, 0.0, jz + 0.12),
+                            P(jx - 0.35, 0.55, jz - 0.3), P(jx - 0.35, 0.55, jz + 0.3))))
+    # jump: up and in, arms reaching for the piston head
+    keys.append((0.25, frame(P(jx + 0.15, 1.75, jz), 5, side_, P(jx + 0.05, 1.0, jz - 0.12), P(jx + 0.1, 1.15, jz + 0.12),
+                             P(px_ - 0.3, 3.35, pz - 0.18), P(px_ - 0.3, 3.35, pz + 0.18))))
+    # catch it: hands over the top of the cylinder head
+    hang_x = px_ - 0.55
+    grip_l, grip_r = P(px_ - 0.12, PISTON_TOP, pz - 0.16), P(px_ - 0.12, PISTON_TOP, pz + 0.16)
+    keys.append((0.15, frame(P(hang_x, PISTON_TOP - 1.25, pz), 0, side_, P(hang_x - 0.05, PISTON_TOP - 1.9, pz - 0.12),
+                             P(hang_x + 0.05, PISTON_TOP - 1.85, pz + 0.12), grip_l, grip_r)))
+    # hang, legs swinging under
+    keys.append((0.35, frame(P(hang_x + 0.05, PISTON_TOP - 1.3, pz), -5, side_, P(hang_x + 0.15, PISTON_TOP - 1.95, pz - 0.12),
+                             P(hang_x + 0.1, PISTON_TOP - 1.95, pz + 0.12), grip_l, grip_r)))
+    keys.append((0.3, frame(P(hang_x, PISTON_TOP - 1.3, pz), 0, side_, P(hang_x - 0.1, PISTON_TOP - 1.95, pz - 0.12),
+                            P(hang_x - 0.05, PISTON_TOP - 1.95, pz + 0.12), grip_l, grip_r)))
+    # pull up, feet walking up the cylinder's side
+    keys.append((0.5, frame(P(hang_x + 0.05, PISTON_TOP - 0.45, pz), 15, side_, P(px_ - 0.3, PISTON_TOP - 0.6, pz - 0.12),
+                            P(hang_x, PISTON_TOP - 1.0, pz + 0.12), grip_l, grip_r)))
+    # mantle: lean over it, a foot onto the top
+    keys.append((0.5, frame(P(px_ - 0.25, PISTON_TOP + 0.35, pz), 35, side_, P(px_ - 0.05, PISTON_TOP, pz - 0.12),
+                            P(px_ - 0.3, PISTON_TOP - 0.5, pz + 0.12), P(px_ + 0.08, PISTON_TOP, pz - 0.2), P(px_ + 0.08, PISTON_TOP, pz + 0.2))))
+    # stand on the piston, hands on the knee guard
+    keys.append((0.45, frame(P(px_ - 0.08, PISTON_TOP + HIP_H, pz), 0, side_, P(px_ - 0.05, PISTON_TOP, pz - 0.12),
+                             P(px_ - 0.05, PISTON_TOP, pz + 0.12), P(KNEE_SIDE_X - 0.03, KNEE[0] - 0.35, pz - 0.22),
+                             P(KNEE_SIDE_X - 0.03, KNEE[0] - 0.2, pz + 0.22))))
+    # reach up to the top of the knee guard
+    keys.append((0.35, frame(P(px_ - 0.08, PISTON_TOP + HIP_H, pz), 0, side_, P(px_ - 0.05, PISTON_TOP, pz - 0.12),
+                             P(px_ - 0.05, PISTON_TOP, pz + 0.12), P(KNEE_SIDE_X + 0.15, KNEE[0], KNEE[1] - 0.15),
+                             P(KNEE_SIDE_X + 0.15, KNEE[0], KNEE[1] + 0.15))))
+    # pull up, a foot on the thigh armor's side
+    keys.append((0.5, frame(P(KNEE_SIDE_X - 0.28, KNEE[0] - 0.3, KNEE[1]), 15, side_, P(KNEE_SIDE_X - 0.06, KNEE[0] - 0.45, KNEE[1] - 0.12),
+                            P(px_ - 0.05, PISTON_TOP + 0.1, KNEE[1] + 0.12), P(KNEE_SIDE_X + 0.15, KNEE[0], KNEE[1] - 0.15),
+                            P(KNEE_SIDE_X + 0.15, KNEE[0], KNEE[1] + 0.15))))
+    # over the edge onto the knee guard
+    keys.append((0.5, frame(P(KNEE_SIDE_X + 0.1, KNEE[0] + 0.4, KNEE[1]), 35, side_, P(KNEE_SIDE_X + 0.25, KNEE[0], KNEE[1] - 0.12),
+                            P(KNEE_SIDE_X - 0.05, KNEE[0] - 0.4, KNEE[1] + 0.12), P(LANE + 0.2, KNEE[0], KNEE[1] - 0.15),
+                            P(LANE + 0.2, KNEE[0], KNEE[1] + 0.15))))
+    # stand up on it, turning to face the torso front
     x = LANE
-    keys.append((0.0, stand(x, 4.9, 0.0, face)))
-    # onto the toe, then the top of the foot
-    keys.append((0.4, frame(P(x, 0.25 + HIP_H, 4.4), 0, face, P(x - 0.12, TOE[0], TOE[1] + 0.1), P(x + 0.12, 0.0, 4.75),
-                            P(x - 0.33, 0.95, 4.35), P(x + 0.33, 0.95, 4.5))))
-    keys.append((0.4, frame(P(x, TOE[0] + HIP_H, TOE[1]), 0, face, P(x - 0.12, TOE[0], TOE[1]), P(x + 0.12, TOE[0], TOE[1]),
-                            P(x - 0.2, 1.9, SHIN_Z + 0.05), P(x + 0.2, 1.7, SHIN_Z + 0.05))))
-    keys.append((0.5, frame(P(x, FOOT[0] + HIP_H, FOOT[1] + 0.1), 10, face, P(x - 0.12, FOOT[0], FOOT[1]), P(x + 0.12, FOOT[0], FOOT[1]),
-                            P(x - 0.2, FOOT[0] + 1.3, SHIN_Z + 0.03), P(x + 0.2, FOOT[0] + 1.6, SHIN_Z + 0.03))))
-
-    # up the shin: each limb holds for half a cycle, then moves up 0.6 m; a
-    # foot and the opposite hand move together. The body hangs in front of
-    # the face (+Z side), facing it.
-    step = 0.3
-    hip_z, foot_z, hand_z = SHIN_Z + 0.30, SHIN_Z + 0.08, SHIN_Z + 0.03
-
-    def limb(c, base, phase):
-        xx = c - FOOT[0] + phase
-        n = math.floor(xx / (2 * step))
-        f = xx / (2 * step) - n
-        level = base + n * 2 * step - phase + step
-        if f < 0.5:
-            return level, 0.0
-        u = (f - 0.5) * 2
-        return level + 2 * step * (u * u * (3 - 2 * u)), math.sin(math.pi * u)
-
-    def climb(c):
-        out = []
-        # facing -Z the body's left is -X
-        for dx, base, phase, z in ((-0.12, FOOT[0], step, foot_z), (0.12, FOOT[0], 0.0, foot_z),
-                                   (-0.20, FOOT[0] + 1.3, 0.0, hand_z), (0.20, FOOT[0] + 1.3, step, hand_z)):
-            y, lift = limb(c, base, phase)
-            out.append(P(x + dx, y, z + 0.12 * lift))
-        return frame(P(x, c + HIP_H, hip_z), 0, face, *out)
-
-    c_end = KNEE[0] - 1.75
-    n = max(2, round((c_end - FOOT[0]) / CLIMB_SPEED * BOARD_RATE))
-    for i in range(n + 1):
-        keys.append((0.3 if i == 0 else 1 / BOARD_RATE, climb(FOOT[0] + (c_end - FOOT[0]) * i / n)))
-
-    # onto the knee guard
-    keys.append((0.5, frame(P(x, KNEE[0] + 0.35, KNEE[1] + 0.32), 30, face, P(x - 0.12, KNEE[0], KNEE[1]),
-                            P(x + 0.12, KNEE[0] - 0.55, foot_z), P(x - 0.2, KNEE[0] + 0.55, FRONT_Z + 0.03),
-                            P(x + 0.2, KNEE[0] + 0.45, FRONT_Z + 0.03))))
-    keys.append((0.4, frame(P(x, KNEE[0] + HIP_H, KNEE[1] + 0.05), 0, face, P(x - 0.12, KNEE[0], KNEE[1]),
-                            P(x + 0.12, KNEE[0], KNEE[1]), P(x - 0.2, KNEE[0] + 1.25, FRONT_Z + 0.03),
-                            P(x + 0.2, KNEE[0] + 1.1, FRONT_Z + 0.03))))
+    keys.append((0.5, frame(P(x, KNEE[0] + HIP_H, KNEE[1] + 0.05), 0, face, P(x - 0.12, KNEE[0], KNEE[1]),
+                            P(x + 0.12, KNEE[0], KNEE[1]), P(x - 0.33, KNEE[0] + HIP_H + SHOULDER_H - 0.6, KNEE[1] + 0.05),
+                            P(x + 0.33, KNEE[0] + HIP_H + SHOULDER_H - 0.6, KNEE[1] + 0.05))))
     # up the torso front onto the roof
     roof = g["roof"] - G
     keys.append((0.4, frame(P(x, KNEE[0] + HIP_H, KNEE[1] + 0.05), 0, face, P(x - 0.12, KNEE[0], KNEE[1]),

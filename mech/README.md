@@ -320,25 +320,27 @@ can now swing to -105°.
 (`tc/pilot.tc`). It is a sequence:
 
 1. Your pilot body appears where you stand and the real you is hidden. You
-   walk to the front of the mech's front (right) foot while the mech kneels,
-   turns its turret ahead, levels its guns and opens its hatch.
-2. You climb (11 s): onto the toe and the top of the foot, hand over hand up
-   the shin to the knee guard, up the torso front onto the roof, back along
-   the roof outside the right light gun, onto the hatch's side rim, down onto
-   the cabin floor, turn to face ahead, and slide forward into the chair.
+   walk to the outboard side of the mech's front (right) leg while the mech
+   kneels, turns its turret ahead, levels its guns and opens its hatch.
+2. You climb (12 s): crouch and jump to grab the head of the knee piston,
+   hang, pull up and stand on the piston, reach up to the knee guard and
+   climb onto it, reach up to the roof's front edge and pull yourself up top,
+   walk back along the roof outside the right light gun, sit on the hatch's
+   side rim, drop onto the cabin floor, turn to face ahead, and slide forward
+   into the chair.
 3. The hatch shuts.
 4. The mech stands up, and you have the controls.
 
 Getting out (F or `@exit`) runs it backwards: the mech kneels, opens up, and
-you climb out and down the front leg. Your real body comes back in front of
-the foot, and the mech stays parked.
+you climb out and down the front leg the same way. Your real body comes back
+beside the leg, and the mech stays parked.
 
 The climb is a timeline baked by `pack/src/mech_pilot.py`
 (`board_timeline`): 10 samples a second of the figure's hips, lean, yaw, feet
-and hands, in the mech frame with the mech kneeling. The holds on the leg and
-the torso front were measured off the kneeling model in the viewer. On the
-shin each limb holds for half a cycle and then moves up 0.6 m, a foot with
-the opposite hand. The rest is keyframes. The last sample is the seated pose.
+and hands, in the mech frame with the mech kneeling. It is keyframes, eased
+between. The holds (the knee piston's head, the knee guard's top and side,
+the roof's front edge) were measured off the kneeling model in the viewer.
+The last sample is the seated pose.
 The game plays it through the torso's transform, and the viewer's "Board"
 and "Get out" buttons play the same timeline.
 
