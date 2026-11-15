@@ -27,9 +27,7 @@
 // displays without the spawn location's yaw, so the heading goes into the
 // matrix too.
 //
-// The roof hatch ("hinge_x") turns about its hinge's X by mHatch, and the
-// boarding ladder's drop section ("extend_y") is scaled down from its top by
-// mLadder (pilot.tc).
+// The roof hatch ("hinge_x") turns about its hinge's X by mHatch (pilot.tc).
 
 /** Display UUIDs of each mech's parts, in mechPartData order, and the same
  * UUIDs by draw group (mGroup order). */
@@ -70,7 +68,7 @@ declare global mechLoaded: num;
 
 /** The parsed data's current version. */
 function mechDataVersion(): num {
-    return 8;
+    return 9;
 }
 
 /** Parses the generated data once. */
@@ -208,7 +206,6 @@ function mechRender(m: num, dur: num = 0) {
         pilotRender(m, line W, line segs[(global gSegs[7] as num)] as list, vec(line o.x, line o.y + global gBodyY[m], line o.z));
     }
     line hatch = global mHatch[m];
-    line ladder = global mLadder[m];
     line gids = global mGroupIds[m] as list;
     repeat (line i to global mGroup.len()) {
         line p = global mGroup[line i] as list;
@@ -238,9 +235,6 @@ function mechRender(m: num, dur: num = 0) {
             line hy = line cy * line c + line cz * line sn;
             line cz = line cz * line c - line cy * line sn;
             line cy = line hy;
-        } else if (line p[2] as str == "extend_y") {
-            // the ladder's drop section: scaled down from its top
-            line cy = line cy * line ladder;
         }
         line wx = rotApply(line W, line cx);
         line wy = rotApply(line W, line cy);
@@ -305,8 +299,6 @@ function spawnMech(at: loc, paint: num, accent: num): num {
     global mBody.append([]);
     global mHatch.append(0);
     global mHatchTo.append(0);
-    global mLadder.append(ladderStowed());
-    global mLadderTo.append(ladderStowed());
     gaitInit(global mechCount);
     mechRender(global mechCount);
     ensureMechLoop();
@@ -374,8 +366,6 @@ function clearMechs {
     global mBody = [];
     global mHatch = [];
     global mHatchTo = [];
-    global mLadder = [];
-    global mLadderTo = [];
     global mechCount = 0;
 }
 

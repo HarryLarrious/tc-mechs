@@ -15,11 +15,13 @@ inside it).
 
 Boarding is baked here as a timeline of figure poses in the mech frame at
 rest (with the mech kneeling and the turret facing ahead), BOARD_RATE samples
-a second: from standing at the foot of the boarding ladder, hand over hand up
-its rungs, over the grab handles onto the ammo bustle, a few steps to the
-roof hatch, sit on its rim, lower in and slide forward into the chair. Its
-last sample is the seated pose (hands on the joysticks). Getting out plays it
-backwards. The walk from the player to the ladder is done live.
+a second: from standing in front of the kneeling mech's front (right) foot,
+up onto its toe and the top of the foot, hand over hand up the shin to the
+knee guard, up the torso front onto the roof, back along the roof outside
+the right light gun, onto the hatch's side rim, down into the cabin, turn to
+face ahead and slide forward into the chair. Its last sample is the seated
+pose (hands on the joysticks). Getting out plays it backwards. The walk from
+the player to the front foot is done live.
 
 Writes (called from mech_parts.py):
   pack/assets/mech/items/pilot/unit.json    the head as a 1 x 1 x 1 box at the origin
@@ -134,40 +136,76 @@ def pose(seat, recline, hips_z, grips):
 
 
 BOARD_RATE = 10        # timeline samples per second
-CLIMB_SPEED = 1.6      # m/s up the ladder
+CLIMB_SPEED = 1.6      # m/s up a climbing face
 HIP_H = 12 * PX        # hips above the soles, standing
 SHOULDER_H = 10 * PX   # shoulder pivots above the hips
+
+# The climb up the front (right) leg of the kneeling mech: holds measured off
+# the kneeling model in the viewer (raycasts), as heights above the ground
+# and z in the mech frame (m). The pilot climbs the leg's outer half, x = LANE.
+LANE = -1.50           # x of the climb and of the walk along the roof
+TOE = (0.42, 3.9)      # top of the toe plates (height, z)
+FOOT = (1.18, 2.86)    # top of the foot over the ankle
+SHIN_Z = 2.50          # the shin and knee guard's front face
+KNEE = (5.10, 2.28)    # top of the knee guard: a ledge
+FRONT_Z = 2.06         # the torso's front face above it
+ROOF_EDGE_Z = 1.95     # where the roof starts at the front
+WALK_X = -1.55         # along the roof, outside the right light gun
 
 
 def board_timeline(g: dict, seat, recline, hips_z, grips) -> list[list[float]]:
     """The boarding timeline: per sample [hips x y z, lean (degrees, + forward),
-    left foot, right foot, left hand, right hand], all in the mech frame at rest
-    (real meters). g: the geometry (real meters): ground under the kneeling
-    mech, the rungs' plane z and spacing, the bustle lid top, the handles'
-    top, roof top, the roof's back edge z, the hatch hole's z range and the
-    cabin floor."""
-    G, ZR, step = g["ground"], g["rung_z"], g["rung_step"]
-    hip_z = ZR - 0.30          # hips hang behind the rungs
-    foot_z = ZR - 0.08         # soles on the rungs
-    hand_z = ZR - 0.03
+    yaw (degrees, 0 faces +Z, 90 faces +X), left foot, right foot, left hand,
+    right hand], all in the mech frame at rest (real meters). g: the geometry
+    (real meters): ground under the kneeling mech, roof top, the hatch hole's
+    z range and half width, and the cabin floor."""
+    G = g["ground"]
 
-    def hang(h, x):
-        """A hand hanging at the side of hips h."""
-        return (x, h[1] + SHOULDER_H - 0.62, h[2])
+    def P(x, h, z):
+        """A point `h` above the kneeling mech's ground."""
+        return (x, G + h, z)
 
-    def frame(h, lean, fl, fr, hl, hr):
-        return [*h, lean, *fl, *fr, *hl, *hr]
+    def at(c, yaw, k, h, fwd=0.0):
+        """A point k to the body's left and fwd ahead of c (x, z), at height h."""
+        r = math.radians(yaw)
+        lx, lz = math.cos(r), -math.sin(r)
+        fx, fz = math.sin(r), math.cos(r)
+        return (c[0] + lx * k + fx * fwd, h, c[1] + lz * k + fz * fwd)
+
+    def stand(x, z, h, yaw, lean=0.0, step=0.0, swing=0.0):
+        """Standing on height h at (x, z): feet `step` apart along the walk,
+        hands hanging (swinging `swing` m)."""
+        c = (x, z)
+        hip = (x, G + h + HIP_H, z)
+        return [*hip, lean, yaw,
+                *at(c, yaw, 0.12, G + h, step / 2), *at(c, yaw, -0.12, G + h, -step / 2),
+                *at(c, yaw, 0.33, hip[1] + SHOULDER_H - 0.6, -swing), *at(c, yaw, -0.33, hip[1] + SHOULDER_H - 0.6, swing)]
+
+    def frame(hip, lean, yaw, fl, fr, hl, hr):
+        return [*hip, lean, yaw, *fl, *fr, *hl, *hr]
 
     keys = []                                          # (seconds to get here, frame)
-    h0 = (0.0, G + HIP_H, hip_z)
-    keys.append((0.0, frame(h0, 0, (0.12, G, hip_z), (-0.12, G, hip_z), hang(h0, 0.33), hang(h0, -0.33))))
+    face = 180.0                                       # facing the mech's front: toward -Z
+    x = LANE
+    keys.append((0.0, stand(x, 4.9, 0.0, face)))
+    # onto the toe, then the top of the foot
+    keys.append((0.4, frame(P(x, 0.25 + HIP_H, 4.4), 0, face, P(x - 0.12, TOE[0], TOE[1] + 0.1), P(x + 0.12, 0.0, 4.75),
+                            P(x - 0.33, 0.95, 4.35), P(x + 0.33, 0.95, 4.5))))
+    keys.append((0.4, frame(P(x, TOE[0] + HIP_H, TOE[1]), 0, face, P(x - 0.12, TOE[0], TOE[1]), P(x + 0.12, TOE[0], TOE[1]),
+                            P(x - 0.2, 1.9, SHIN_Z + 0.05), P(x + 0.2, 1.7, SHIN_Z + 0.05))))
+    keys.append((0.5, frame(P(x, FOOT[0] + HIP_H, FOOT[1] + 0.1), 10, face, P(x - 0.12, FOOT[0], FOOT[1]), P(x + 0.12, FOOT[0], FOOT[1]),
+                            P(x - 0.2, FOOT[0] + 1.3, SHIN_Z + 0.03), P(x + 0.2, FOOT[0] + 1.6, SHIN_Z + 0.03))))
 
-    # the climb: each limb holds a rung for half a cycle, then moves up two;
-    # a foot and the opposite hand move together
+    # up the shin: each limb holds for half a cycle, then moves up 0.6 m; a
+    # foot and the opposite hand move together. The body hangs in front of
+    # the face (+Z side), facing it.
+    step = 0.3
+    hip_z, foot_z, hand_z = SHIN_Z + 0.30, SHIN_Z + 0.08, SHIN_Z + 0.03
+
     def limb(c, base, phase):
-        x = c - G + phase
-        n = math.floor(x / (2 * step))
-        f = x / (2 * step) - n
+        xx = c - FOOT[0] + phase
+        n = math.floor(xx / (2 * step))
+        f = xx / (2 * step) - n
         level = base + n * 2 * step - phase + step
         if f < 0.5:
             return level, 0.0
@@ -175,54 +213,73 @@ def board_timeline(g: dict, seat, recline, hips_z, grips) -> list[list[float]]:
         return level + 2 * step * (u * u * (3 - 2 * u)), math.sin(math.pi * u)
 
     def climb(c):
-        h = (0.0, c + HIP_H, hip_z)
         out = []
-        for x, base, phase, z in ((0.12, G, step, foot_z), (-0.12, G, 0.0, foot_z),
-                                  (0.20, G + 1.2, 0.0, hand_z), (-0.20, G + 1.2, step, hand_z)):
+        # facing -Z the body's left is -X
+        for dx, base, phase, z in ((-0.12, FOOT[0], step, foot_z), (0.12, FOOT[0], 0.0, foot_z),
+                                   (-0.20, FOOT[0] + 1.3, 0.0, hand_z), (0.20, FOOT[0] + 1.3, step, hand_z)):
             y, lift = limb(c, base, phase)
-            out.append((x, y, z - 0.12 * lift))
-        return frame(h, 0, *out)
+            out.append(P(x + dx, y, z + 0.12 * lift))
+        return frame(P(x, c + HIP_H, hip_z), 0, face, *out)
 
-    c_end = g["lid"] - 1.9
-    n = max(2, round((c_end - G) / CLIMB_SPEED * BOARD_RATE))
+    c_end = KNEE[0] - 1.75
+    n = max(2, round((c_end - FOOT[0]) / CLIMB_SPEED * BOARD_RATE))
     for i in range(n + 1):
-        keys.append((0.3 if i == 0 else 1 / BOARD_RATE, climb(G + (c_end - G) * i / n)))
+        keys.append((0.3 if i == 0 else 1 / BOARD_RATE, climb(FOOT[0] + (c_end - FOOT[0]) * i / n)))
 
-    lid, roof, top = g["lid"], g["roof"], g["handle_top"]
-    back, h0z, h1z, floor = g["roof_back"], g["hole"][0], g["hole"][1], g["floor"]
-    # over the handles onto the bustle lid
-    keys.append((0.45, frame((0, lid - 0.05, hip_z), 0, (0.12, lid - 0.40, foot_z), (-0.12, lid - 0.70, foot_z),
-                             (0.20, top, hand_z + 0.05), (-0.20, top, hand_z + 0.05))))
-    keys.append((0.5, frame((0, lid + 0.55, ZR + 0.07), 35, (0.12, lid, ZR + 0.27), (-0.12, lid - 0.10, foot_z),
-                            (0.25, lid, ZR + 0.62), (-0.25, lid, ZR + 0.62))))
-    h = (0, lid + HIP_H, ZR + 0.47)
-    keys.append((0.5, frame(h, 0, (0.12, lid, h[2]), (-0.12, lid, h[2]), hang(h, 0.33), hang(h, -0.33))))
-    # two steps to the hatch
-    h = (0, lid + HIP_H + 0.03, (ZR + 0.47 + back - 0.25) / 2)
-    keys.append((0.35, frame(h, 0, (0.12, lid, h[2] + 0.22), (-0.12, lid, h[2] - 0.22),
-                             (0.33, h[1] + SHOULDER_H - 0.6, h[2] - 0.15), (-0.33, h[1] + SHOULDER_H - 0.6, h[2] + 0.15))))
-    h = (0, lid + HIP_H, back - 0.25)
-    keys.append((0.35, frame(h, 0, (0.12, lid, h[2]), (-0.12, lid, h[2]), hang(h, 0.33), hang(h, -0.33))))
-    # sit on the hatch rim, legs in the hole
-    keys.append((0.5, frame((0, roof + 0.07, (back + h0z) / 2), -10, (0.12, roof - 0.45, (h0z + h1z) / 2 - 0.05),
-                            (-0.12, roof - 0.45, (h0z + h1z) / 2 - 0.05), (0.55, roof, back + 0.02), (-0.55, roof, back + 0.02))))
-    # down through it onto the cabin floor, holding the rim
-    hz = (h0z + h1z) / 2 - 0.08
-    keys.append((0.7, frame((0, floor + HIP_H, hz), 0, (0.12, floor, hz + 0.1), (-0.12, floor, hz + 0.1),
-                            (0.5, roof, hz - 0.2), (-0.5, roof, hz - 0.2))))
+    # onto the knee guard
+    keys.append((0.5, frame(P(x, KNEE[0] + 0.35, KNEE[1] + 0.32), 30, face, P(x - 0.12, KNEE[0], KNEE[1]),
+                            P(x + 0.12, KNEE[0] - 0.55, foot_z), P(x - 0.2, KNEE[0] + 0.55, FRONT_Z + 0.03),
+                            P(x + 0.2, KNEE[0] + 0.45, FRONT_Z + 0.03))))
+    keys.append((0.4, frame(P(x, KNEE[0] + HIP_H, KNEE[1] + 0.05), 0, face, P(x - 0.12, KNEE[0], KNEE[1]),
+                            P(x + 0.12, KNEE[0], KNEE[1]), P(x - 0.2, KNEE[0] + 1.25, FRONT_Z + 0.03),
+                            P(x + 0.2, KNEE[0] + 1.1, FRONT_Z + 0.03))))
+    # up the torso front onto the roof
+    roof = g["roof"] - G
+    keys.append((0.4, frame(P(x, KNEE[0] + HIP_H, KNEE[1] + 0.05), 0, face, P(x - 0.12, KNEE[0], KNEE[1]),
+                            P(x + 0.12, KNEE[0], KNEE[1]), P(x - 0.2, roof, ROOF_EDGE_Z - 0.05), P(x + 0.2, roof, ROOF_EDGE_Z - 0.05))))
+    keys.append((0.5, frame(P(x, roof - 0.35, FRONT_Z + 0.28), 0, face, P(x - 0.12, KNEE[0] + 0.6, FRONT_Z + 0.06),
+                            P(x + 0.12, KNEE[0], KNEE[1]), P(x - 0.2, roof, ROOF_EDGE_Z - 0.05), P(x + 0.2, roof, ROOF_EDGE_Z - 0.05))))
+    keys.append((0.5, frame(P(x, roof + 0.42, ROOF_EDGE_Z + 0.02), 35, face, P(x - 0.12, roof, ROOF_EDGE_Z - 0.2),
+                            P(x + 0.12, roof - 0.5, FRONT_Z + 0.06), P(x - 0.25, roof, ROOF_EDGE_Z - 0.5),
+                            P(x + 0.25, roof, ROOF_EDGE_Z - 0.5))))
+    z0 = ROOF_EDGE_Z - 0.35
+    keys.append((0.45, stand(WALK_X, z0, roof, face)))
+    # back along the roof, outside the light gun, to beside the hatch
+    h0z, h1z = g["hole"]
+    hz = (h0z + h1z) / 2
+    walk = [z0 + (hz - z0) * k / 5 for k in range(1, 6)]
+    for k, z in enumerate(walk):
+        last = k == len(walk) - 1
+        sgn = 1 if k % 2 == 0 else -1
+        keys.append((0.32, stand(WALK_X, z, roof, face, step=0 if last else 0.45 * sgn, swing=0 if last else 0.15 * sgn)))
+    # turn to the hatch and step to its right rim
+    keys.append((0.4, stand(WALK_X, hz, roof, 90.0)))
+    hx = g["hole_x"]
+    keys.append((0.4, stand(-hx - 0.45, hz, roof, 90.0, step=0.3, swing=0.1)))
+    keys.append((0.3, stand(-hx - 0.4, hz, roof, 90.0)))
+    # sit on the rim, legs in the hole, hands on the roof
+    keys.append((0.5, frame(P(-hx - 0.16, roof + 0.07, hz), -10, 90.0, P(-0.05, roof - 0.55, hz - 0.12), P(-0.05, roof - 0.55, hz + 0.12),
+                            P(-hx - 0.2, roof, hz - 0.38), P(-hx - 0.2, roof, hz + 0.38))))
+    # down onto the cabin floor, holding the rim, and turn to face ahead
+    floor = g["floor"] - G
+    keys.append((0.7, frame(P(-0.05, floor + HIP_H, hz), 0, 90.0, P(0.0, floor, hz - 0.12), P(0.0, floor, hz + 0.12),
+                            P(-hx - 0.1, roof, hz - 0.35), P(-hx - 0.1, roof, hz + 0.35))))
+    keys.append((0.5, frame(P(0.0, floor + HIP_H, hz + 0.05), 0, 0.0, P(0.12, floor, hz + 0.1), P(-0.12, floor, hz + 0.1),
+                            P(0.3, roof, h1z + 0.05), P(-0.3, roof, h1z + 0.05))))
     # crouch and slide forward under the roof into the chair
     parts, neck, up_t, head_center = pose(seat, recline, hips_z, grips)
     hip = add(seat, (0.0, 0.06, hips_z))
+    fl_ = G + floor
     hz2 = (h1z + hip[2]) / 2
-    keys.append((0.6, frame((0, floor + 0.38, hz2), -30, (0.14, floor + 0.04, hip[2] - 0.35), (-0.14, floor + 0.04, hip[2] - 0.35),
-                            (0.3, floor + 0.70, hz2 + 0.2), (-0.3, floor + 0.70, hz2 + 0.2))))
+    keys.append((0.6, frame((0, fl_ + 0.38, hz2), -30, 0.0, (0.14, fl_ + 0.04, hip[2] - 0.35), (-0.14, fl_ + 0.04, hip[2] - 0.35),
+                            (0.3, fl_ + 0.70, hz2 + 0.2), (-0.3, fl_ + 0.70, hz2 + 0.2))))
     feet = []
     for s_ in (1, -1):
         piv = add(hip, (s_ * 2 * PX, 0.0, 0.0))
         lf, sp = math.radians(LEG_LIFT), math.radians(LEG_SPLAY)
         d = (s_ * math.sin(sp), math.sin(lf), math.cos(lf) * math.cos(sp))
         feet.append(add(piv, mul(norm(d), 12 * PX)))
-    keys.append((0.6, frame(hip, -recline, feet[0], feet[1], grips[0], grips[1])))
+    keys.append((0.6, frame(hip, -recline, 0.0, feet[0], feet[1], grips[0], grips[1])))
 
     # sample: eased between keys
     times = [0.0]
@@ -252,7 +309,9 @@ def fmt(x: float) -> str:
     return "0" if s in ("-0", "") else s
 
 
-def write_pilot(timeline: list[list[float]], ladder_foot) -> None:
+def write_pilot(timeline: list[list[float]]) -> None:
+    first = timeline[0]
+    start = ((first[5] + first[8]) / 2, (first[6] + first[9]) / 2, (first[7] + first[10]) / 2)
     items = ITEMS / "pilot"
     items.mkdir(parents=True, exist_ok=True)
     for old in items.glob("*.json"):
@@ -275,11 +334,13 @@ def write_pilot(timeline: list[list[float]], ladder_foot) -> None:
         "/** The shader's part ids, in display order: head, torso, right arm, left\n"
         " * arm, right leg, left leg. */\n"
         f"function pilotPartIds(): list {{\n    return [{ids}];\n}}\n\n"
-        "/** Where the walk from the player ends (the soles' center at the foot of\n"
-        " * the ladder, on the ground under the kneeling mech). */\n"
-        f"function pilotLadderFoot(): vec {{\n    return vec({', '.join(fmt(c) for c in ladder_foot)});\n}}\n\n"
-        "/** Boarding, sample by sample: \"hips x y z, lean (degrees, + forward), left\n"
-        " * foot x y z, right foot, left hand, right hand\". The last is seated. */\n"
+        "/** Where the walk from the player ends (the soles' center in front of the\n"
+        " * kneeling mech's front foot, on the ground), and the way the body faces\n"
+        " * there (yaw in the mech frame: 0 faces +Z, 90 faces +X). */\n"
+        f"function pilotClimbStart(): vec {{\n    return vec({', '.join(fmt(c) for c in start)});\n}}\n\n"
+        f"function pilotClimbYaw(): num {{\n    return {fmt(first[4])};\n}}\n\n"
+        "/** Boarding, sample by sample: \"hips x y z, lean (degrees, + forward), yaw,\n"
+        " * left foot x y z, right foot, left hand, right hand\". The last is seated. */\n"
         f"function pilotBoardPath(): list {{\n    return [\n        {rows}\n    ];\n}}\n"
     )
     (ROOT / "tc/pilot_data.tc").write_text(tc)

@@ -33,7 +33,7 @@
 // * Parked: without a pilot and with nothing to do it stops, then goes down
 //   on one knee (the legs blend into mechKneelPose, the body drops
 //   gKneelDrop); it stands up again to walk. Boarding and getting out
-//   (pilot.tc) kneel it too, and open its hatch and drop its ladder.
+//   (pilot.tc) kneel it too, and open its hatch.
 //
 // Sizes in meters (mechGait is at real size), angles in degrees.
 
@@ -562,7 +562,6 @@ function gaitTick(m: num) {
     // parked without a pilot and with nothing to do
     line boardKneel = pilotBoardTick(m);
     global mHatch[m] = approach(global mHatch[m], global mHatchTo[m], hatchRate());
-    global mLadder[m] = approach(global mLadder[m], global mLadderTo[m], ladderRate());
     line kneelTo = 0;
     if (global mPilot[m] != "") {
         line kneelTo = line boardKneel;
@@ -677,6 +676,15 @@ function gaitTick(m: num) {
             global gFollow[m] = "";
             global gWantSpeed[m] = 0;
             global gWantTurn[m] = 0;
+        }
+    }
+
+    // with nobody aiming them, the guns level out (so they are out of the
+    // way of a pilot climbing in)
+    if (line piloted == 0 && line follow == "") {
+        repeat (line i to 4) {
+            line s = global gSegs[line i + 7];
+            line joints = setJoint(line joints, line s, approach(line joints[line s] as num, 0, 2));
         }
     }
 
@@ -856,8 +864,14 @@ function gaitTick(m: num) {
     // standing still with nothing left to do for a second: stop walking and
     // redrawing it (its feet are still checked every half second)
     line still = 0;
+    line gunsLevel = 1;
+    repeat (line i to 4) {
+        if (line joints[global gSegs[line i + 7]] as num != 0) {
+            line gunsLevel = 0;
+        }
+    }
     if (line speed == 0 && line turn == 0 && global gWantSpeed[m] == 0 && global gWantTurn[m] == 0 && line follow == "" && global mPilot[m] == "") {
-        if (line swT[1] as num < 0 && line swT[2] as num < 0 && global gDip[m] == 0 && num.abs(wrapDeg(line aimAt - line aim)) < 0.5 && line k == line kneelTo && global mHatch[m] == global mHatchTo[m] && global mLadder[m] == global mLadderTo[m] && global mBoard[m] == 0) {
+        if (line swT[1] as num < 0 && line swT[2] as num < 0 && global gDip[m] == 0 && num.abs(wrapDeg(line aimAt - line aim)) < 0.5 && line k == line kneelTo && global mHatch[m] == global mHatchTo[m] && global mBoard[m] == 0 && line gunsLevel == 1) {
             line still = 1;
         }
     }

@@ -104,8 +104,10 @@ function setBox(m, l, u, f, sx, sy, sz, c) {
   m.matrixWorldNeedsUpdate = true;
 }
 function poseFigure(row) {
-  const H = V3(row), a = row[3] * Math.PI / 180;
-  const tl = new THREE.Vector3(1, 0, 0), tu = new THREE.Vector3(0, Math.cos(a), Math.sin(a)), tf = new THREE.Vector3(0, -Math.sin(a), Math.cos(a));
+  // body axes: leaning forward by row[3] about its left, then turned by the yaw row[4] about Y
+  const H = V3(row), a = row[3] * Math.PI / 180, y = new THREE.Matrix4().makeRotationY(row[4] * Math.PI / 180);
+  const tl = new THREE.Vector3(1, 0, 0).applyMatrix4(y), tu = new THREE.Vector3(0, Math.cos(a), Math.sin(a)).applyMatrix4(y);
+  const tf = new THREE.Vector3(0, -Math.sin(a), Math.cos(a)).applyMatrix4(y);
   const at = (p, v, k) => p.clone().add(v.clone().multiplyScalar(k));
   const neck = at(H, tu, 12 * PX);
   setBox(figBoxes[0], tl, tu, tf, 8, 8, 8, at(neck, tu, 4 * PX));
@@ -115,10 +117,10 @@ function poseFigure(row) {
     const [l, u, f] = limbAxes(b, tl, tu, tf);
     setBox(m, l, u, f, 4, 12 * k, 4, at(from, b, off * PX * k));
   };
-  limb(figBoxes[2], at(at(neck, tu, -2 * PX), tl, -6 * PX), V3(row, 13), 10, 4);   // right arm
-  limb(figBoxes[3], at(at(neck, tu, -2 * PX), tl, 6 * PX), V3(row, 10), 10, 4);    // left arm
-  limb(figBoxes[4], at(H, tl, -2 * PX), V3(row, 7), 12, 6);                         // right leg
-  limb(figBoxes[5], at(H, tl, 2 * PX), V3(row, 4), 12, 6);                          // left leg
+  limb(figBoxes[2], at(at(neck, tu, -2 * PX), tl, -6 * PX), V3(row, 14), 10, 4);   // right arm
+  limb(figBoxes[3], at(at(neck, tu, -2 * PX), tl, 6 * PX), V3(row, 11), 10, 4);    // left arm
+  limb(figBoxes[4], at(H, tl, -2 * PX), V3(row, 8), 12, 6);                         // right leg
+  limb(figBoxes[5], at(H, tl, 2 * PX), V3(row, 5), 12, 6);                          // left leg
 }
 const BOARD = spec.board_path, BOARD_RATE = 10;
 let boardT = (BOARD.length - 1) / BOARD_RATE, boardDir = 0;  // seconds into the timeline; +1 boarding, -1 getting out
@@ -184,8 +186,7 @@ function rotAbout(p, deg, axis) {
   return t.multiply(r).multiply(new THREE.Matrix4().makeTranslation(-p[0], -p[1], -p[2]));
 }
 let spin = 0;  // heavy barrel cluster angle
-let hatchAngle = 0;  // roof hatch, degrees (positive opens it)
-let ladderK = 0.03;  // boarding ladder drop section, deployed fraction
+let hatchAngle = 0;  // roof hatch, degrees (negative opens it)
 // Where the mech stands: body position on the ground and heading (yaw,
 // Minecraft's convention: forward = (-sin yaw, 0, cos yaw)), plus the body's
 // height offset from the gait.
@@ -569,7 +570,6 @@ function partMatrix(P, segs) {
   const m = segs[p.segment].clone().multiply(P.rest);
   if (p.anim === "spin_z") m.multiply(new THREE.Matrix4().makeRotationZ(spin));
   if (p.anim === "hinge_x") m.multiply(new THREE.Matrix4().makeRotationX(rad(hatchAngle)));
-  if (p.anim === "extend_y") m.multiply(new THREE.Matrix4().makeScale(1, ladderK, 1));
   return m;
 }
 
@@ -701,10 +701,9 @@ renderer.setAnimationLoop(() => {
   }
   if (fire.checked) spin += dt * 14;
   if (walk.checked) bob = 0; else { body.y = gait.feet ? gait.gy : 0; groundBody(); }
-  hatchAngle = approach(hatchAngle, document.getElementById("hatch").checked ? 110 : 0, dt * 180);
-  // the ladder drops once it kneels; boarding plays once kneeling, open and dropped
-  ladderK = approach(ladderK, document.getElementById("kneel").checked && kneelK >= 1 ? 1 : 0.03, dt);
-  if (boardDir !== 0 && kneelK >= 1 && hatchAngle >= 110 && ladderK >= 1) {
+  hatchAngle = approach(hatchAngle, document.getElementById("hatch").checked ? -110 : 0, dt * 180);
+  // boarding plays once kneeling with the hatch open
+  if (boardDir !== 0 && kneelK >= 1 && hatchAngle <= -110) {
     boardT += boardDir * dt;
     const end = (BOARD.length - 1) / BOARD_RATE;
     if (boardT >= end || boardT <= 0) { boardT = Math.min(Math.max(boardT, 0), end); boardDir = 0; }

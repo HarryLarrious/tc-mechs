@@ -2,26 +2,26 @@
 // the HUD.
 //
 // A mech without a pilot is parked down on one knee (gait.tc blends the legs
-// into mechKneelPose), with its roof hatch shut and its boarding ladder
-// stowed. Boarding (@board) is a sequence, one state per mech in mBoard:
+// into mechKneelPose), with its roof hatch shut. Boarding (@board) is a
+// sequence, one state per mech in mBoard:
 //
 //   1  the player becomes their pilot body (the real player is hidden, see
-//      below) and walks to the foot of the ladder at the mech's back, while
-//      the mech kneels, turns its turret ahead, opens the hatch and drops the
-//      ladder's lower section to the ground
-//   2  the body climbs: hand over hand up the rungs, over the grab handles
-//      onto the ammo bustle, two steps to the hatch, sits on its rim, lowers
-//      in and slides forward into the chair (pilotBoardPath, baked by
-//      pack/src/mech_pilot.py in the mech frame)
-//   3  the hatch shuts and the ladder stows
+//      below) and walks to the front of the mech's front (right) foot, while
+//      the mech kneels, turns its turret ahead and opens the hatch
+//   2  the body climbs: onto the foot, hand over hand up the shin to the knee
+//      guard, up the torso front onto the roof, back along the roof to the
+//      hatch, sits on its side rim, lowers in, turns to face ahead and slides
+//      into the chair (pilotBoardPath, baked by pack/src/mech_pilot.py in the
+//      mech frame)
+//   3  the hatch shuts
 //   4  the mech stands up
 //   0  piloting: W/S walk forward and back, A/D turn, look around to aim
 //      (the turret turns toward where they look, the guns tilt with their
 //      pitch), F to get out
 //
 // Getting out (F or @exit) runs it backwards: 5 the mech kneels, 6 the hatch
-// opens and the ladder drops, 7 the body climbs out and down the ladder, and
-// the real player stands at its foot again. The mech then parks.
+// opens, 7 the body climbs out and down the front leg, and the real player
+// stands in front of the foot again. The mech then parks.
 //
 // The pilot's body is the player's own skin on six item displays (as the
 // rally driver): each holds the player's head, and the pack's core shader
@@ -37,7 +37,7 @@
 // Shift would dismount; that is cancelled.
 
 /** Per mech: boarding state (see above) and ticks in it (state 2 and 7: the
- * timeline tick), and where the walk to the ladder started (world, the
+ * timeline tick), and where the walk to the mech started (world, the
  * soles' center). */
 declare global mBoard: list[num];
 declare global mBoardT: list[num];
@@ -45,32 +45,21 @@ declare global mBoardFrom: list[vec];
 /** Per mech: the pilot body's display UUIDs [head, torso, right arm, left
  * arm, right leg, left leg], or []. */
 declare global mBody: list;
-/** Per mech: roof hatch angle (degrees, positive is open) and the angle it
- * moves to; the ladder's drop section, deployed fraction and its target. */
+/** Per mech: roof hatch angle (degrees, negative is open) and the angle it
+ * moves to. */
 declare global mHatch: list[num];
 declare global mHatchTo: list[num];
-declare global mLadder: list[num];
-declare global mLadderTo: list[num];
 /** The boarding timeline, parsed: per sample 16 numbers (pilotBoardPath). */
 declare global pPath: list;
 
 /** The hatch's open angle and how fast it moves (degrees per tick); the
- * ladder's stowed fraction and deploy rate (per tick); the walk to the
- * ladder (m per tick). */
+ * walk to the mech (m per tick). */
 function hatchOpen(): num {
-    return 110;
+    return -110;
 }
 
 function hatchRate(): num {
     return 9;
-}
-
-function ladderStowed(): num {
-    return 0.03;
-}
-
-function ladderRate(): num {
-    return 0.05;
 }
 
 function walkStep(): num {
@@ -90,7 +79,7 @@ function loadPilotPath {
     }
 }
 
-/** Ticks of the timeline from standing at the ladder to seated. */
+/** Ticks of the timeline from standing at the front foot to seated. */
 function boardTicks(): num {
     return (global pPath.len() - 1) * 20 / global pRate;
 }
@@ -175,8 +164,7 @@ function pilotOut(m: num) {
 }
 
 /** Ends piloting mech m: removes the pilot body, shows the player again,
- * gets them off the seat, and leaves the mech to park (kneel, hatch shut,
- * ladder stowed). */
+ * gets them off the seat, and leaves the mech to park (kneel, hatch shut). */
 function pilotRelease(m: num) {
     line pilot = global mPilot[m];
     pilotBodyRemove(m);
@@ -184,7 +172,6 @@ function pilotRelease(m: num) {
     global mBoard[m] = 0;
     global mBoardT[m] = 0;
     global mHatchTo[m] = 0;
-    global mLadderTo[m] = ladderStowed();
     global gWantSpeed[m] = 0;
     global gWantTurn[m] = 0;
     global gWalking[m] = 1;
@@ -255,20 +242,28 @@ function pilotHideAllFrom {
     }
 }
 
-/** The world point at the foot of mech m's ladder where the walk ends (on
- * the ground, with the mech kneeling and its turret ahead). */
-function pilotLadderSpot(m: num): vec {
+/** The world point in front of mech m's front foot where the walk ends and
+ * the climb starts (on the ground, with the mech kneeling and its turret
+ * ahead), and the way the body faces there (world, flat). */
+function pilotClimbSpot(m: num): vec {
     line yaw = global mYaw[m];
     line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
     line L = vec(num.cos(line yaw), 0, num.sin(line yaw));
-    line lf = pilotLadderFoot();
-    return global mPos[m] + line L * line lf.x + line F * line lf.z;
+    line c = pilotClimbStart();
+    return global mPos[m] + line L * line c.x + line F * line c.z;
 }
 
-/** 1 when mech m is ready for the climb: kneeling, turret ahead, hatch open,
- * ladder down. */
+function pilotClimbFacing(m: num): vec {
+    line yaw = global mYaw[m];
+    line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
+    line L = vec(num.cos(line yaw), 0, num.sin(line yaw));
+    line a = pilotClimbYaw();
+    return line L * num.sin(line a) + line F * num.cos(line a);
+}
+
+/** 1 when mech m is ready for the climb: kneeling, turret ahead, hatch open. */
 function pilotClimbReady(m: num): num {
-    if (global gKneel[m] < 1 || global mHatch[m] != hatchOpen() || global mLadder[m] != 1) {
+    if (global gKneel[m] < 1 || global mHatch[m] != hatchOpen()) {
         return 0;
     }
     if (num.abs(wrapDeg(global gAim[m] - global mYaw[m])) > 1) {
@@ -278,7 +273,7 @@ function pilotClimbReady(m: num): num {
 }
 
 /** One tick of mech m's boarding sequence (gait.tc, before the walk): moves
- * it on from state to state, and opens or shuts the hatch and the ladder.
+ * it on from state to state, and opens or shuts the hatch.
  * Returns 1 while the mech should be parked (kneeling): from boarding until
  * the hatch is shut, and when getting out. */
 function pilotBoardTick(m: num): num {
@@ -295,17 +290,16 @@ function pilotBoardTick(m: num): num {
         return 1;
     }
     line kneel = 1;
-    // hatch and ladder: open once it kneels, while boarding or getting out
+    // the hatch opens once it kneels, while boarding or getting out
     if (line state == 1 || line state == 2 || line state >= 5) {
         if (global gKneel[m] >= 1) {
             global mHatchTo[m] = hatchOpen();
-            global mLadderTo[m] = 1;
         }
     }
     if (line state == 1) {
         global mBoardT[m] += 1;
         line walked = global mBoardT[m] * walkStep();
-        line dist = flatDist(global mBoardFrom[m], pilotLadderSpot(m));
+        line dist = flatDist(global mBoardFrom[m], pilotClimbSpot(m));
         if (line walked >= line dist + 1 && pilotClimbReady(m) == 1) {
             global mBoard[m] = 2;
             global mBoardT[m] = 0;
@@ -314,11 +308,10 @@ function pilotBoardTick(m: num): num {
         global mBoardT[m] += 1;
         if (global mBoardT[m] >= boardTicks()) {
             global mHatchTo[m] = 0;
-            global mLadderTo[m] = ladderStowed();
             global mBoard[m] = 3;
         }
     } else if (line state == 3) {
-        if (global mHatch[m] == 0 && global mLadder[m] == ladderStowed()) {
+        if (global mHatch[m] == 0) {
             global mBoard[m] = 4;
         }
     } else if (line state == 4) {
@@ -341,9 +334,9 @@ function pilotBoardTick(m: num): num {
     } else if (line state == 7) {
         global mBoardT[m] -= 1;
         if (global mBoardT[m] <= 0) {
-            // at the foot of the ladder: the real player again
+            // in front of the foot: the real player again
             line pilot = global mPilot[m];
-            line g = pilotLadderSpot(m);
+            line g = pilotClimbSpot(m);
             pilotRelease(m);
             select playersByName(line pilot);
             selected.teleport(loc(line g.x, line g.y, line g.z), keepRot="True");
@@ -387,7 +380,7 @@ function ease(t: num): num {
     return line c * line c * (3 - 2 * line c);
 }
 
-/** The boarding timeline at tick t, interpolated (16 numbers). */
+/** The boarding timeline at tick t, interpolated (17 numbers). */
 function pilotPathAt(t: num): list {
     line x = num.clamp(t * global pRate / 20, 0, global pPath.len() - 1);
     line i = num.min(num.floor(line x), global pPath.len() - 2);
@@ -395,7 +388,7 @@ function pilotPathAt(t: num): list {
     line a = global pPath[line i + 1] as list;
     line b = global pPath[line i + 2] as list;
     line out = [];
-    repeat (line k to 16) {
+    repeat (line k to 17) {
         line p = line a[line k] as num;
         line out.append(line p + ((line b[line k] as num) - line p) * line u);
     }
@@ -425,9 +418,9 @@ function pilotRender(m: num, W: list, T: list, o: vec) {
     line look = line eye.getDirection();
     line state = global mBoard[m];
     if (line state == 1) {
-        // the walk to the ladder: straight there, then face the mech
+        // the walk to the mech: straight there, then face it
         line from = global mBoardFrom[m];
-        line target = pilotLadderSpot(m);
+        line target = pilotClimbSpot(m);
         line dist = flatDist(line from, line target);
         line walked = num.min(global mBoardT[m] * walkStep(), line dist);
         line k = 1;
@@ -435,9 +428,7 @@ function pilotRender(m: num, W: list, T: list, o: vec) {
             line k = line walked / line dist;
         }
         line feet = line from + (line target - line from) * line k;
-        line yaw = global mYaw[m];
-        line ahead = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
-        line tf = line ahead;
+        line tf = pilotClimbFacing(m);
         if (line dist - line walked > 0.05) {
             line tf = ((line target - line from) * vec(1, 0, 1)).setLength(1);
         }
@@ -466,11 +457,16 @@ function pilotRender(m: num, W: list, T: list, o: vec) {
         line t = global mBoardT[m];
     }
     line row = pilotPathAt(line t);
+    // body axes: leaning forward by a about its left, turned by the yaw y
+    // about the torso's up (0 faces +Z, 90 faces +X)
     line a = line row[4] as num;
-    line tl = rotApply(line tw, vec(1, 0, 0));
-    line tu = rotApply(line tw, vec(0, num.cos(line a), num.sin(line a)));
-    line tf = rotApply(line tw, vec(0, 0 - num.sin(line a), num.cos(line a)));
-    pilotFigure(m, pathPoint(line row, 1, line tw), line tl, line tu, line tf, pathPoint(line row, 5, line tw), pathPoint(line row, 8, line tw), pathPoint(line row, 11, line tw), pathPoint(line row, 14, line tw), line look);
+    line y = line row[5] as num;
+    line cy = num.cos(line y);
+    line sy = num.sin(line y);
+    line tl = rotApply(line tw, vec(line cy, 0, 0 - line sy));
+    line tu = rotApply(line tw, vec(num.sin(line a) * line sy, num.cos(line a), num.sin(line a) * line cy));
+    line tf = rotApply(line tw, vec(num.cos(line a) * line sy, 0 - num.sin(line a), num.cos(line a) * line cy));
+    pilotFigure(m, pathPoint(line row, 1, line tw), line tl, line tu, line tf, pathPoint(line row, 6, line tw), pathPoint(line row, 9, line tw), pathPoint(line row, 12, line tw), pathPoint(line row, 15, line tw), line look);
 }
 
 /** Sets display `id` to a part of size (sx, sy, sz) skin pixels with axes

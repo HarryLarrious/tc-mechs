@@ -2,7 +2,7 @@
 
 /** The published pack (tools/build_pack.py rewrites this URL on every build). */
 function packUrl(): str {
-    return "https://raw.githubusercontent.com/HarryLarrious/tc-mechs/pack-dist/mech-pack-a5eb98a3e53e.zip";
+    return "https://raw.githubusercontent.com/HarryLarrious/tc-mechs/pack-dist/mech-pack-8a787b6161ff.zip";
 }
 
 /** Sends the resource pack to the player. */

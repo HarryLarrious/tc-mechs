@@ -30,7 +30,7 @@ function mechSegCount(): num {
 
 /** The mech's parts in spawn order, each "id itemModel seg anim px py pz
  * xx xy xz yx yy yz zx zy zz tseg tx ty tz": the segment index the part
- * rides, its anim (fixed, aim, spin_z, hinge_x, extend_y), its pivot (mech frame at rest),
+ * rides, its anim (fixed, aim, spin_z, hinge_x), its pivot (mech frame at rest),
  * the columns of its rest rotation, and for aim parts the segment and
  * rest point its +Y aims at (tseg 0 otherwise). */
 function mechPartData(): list {
@@ -82,14 +82,12 @@ function mechPartData(): list {
         "torso_frame mech:torso/torso_frame 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "torso_front mech:torso/torso_front 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "torso_top mech:torso/torso_top 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
-        "hatch mech:torso/hatch 8 hinge_x 0 10.248 -0.966 1 0 0 0 1 0 0 0 1 0 0 0 0",
+        "hatch mech:torso/hatch 8 hinge_x 0 10.248 -1.89 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "torso_side_l mech:torso/torso_side_l 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "torso_side_r mech:torso/torso_side_r 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "cockpit mech:torso/cockpit 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "sensors mech:torso/sensors 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "ammo_bustle mech:torso/ammo_bustle 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
-        "ladder mech:torso/ladder 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
-        "ladder_drop mech:torso/ladder_drop 8 extend_y 0 8.526 -3.32 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "antenna mech:torso/antenna 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "heavy_mount_l mech:guns/heavy_mount_l 8 fixed 2.73 9.24 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "heavy_gun_l mech:guns/heavy_gun_l 9 fixed 2.73 9.24 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
@@ -106,7 +104,7 @@ function mechPartData(): list {
 
 /** Number of parts. */
 function mechPartCount(): num {
-    return 66;
+    return 64;
 }
 
 /** The scale the mech was built at (MECH_SCALE): sizes in the gait are

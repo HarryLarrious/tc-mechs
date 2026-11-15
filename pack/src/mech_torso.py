@@ -62,7 +62,7 @@ def pilot_grips():
 EYE = (0.0, SEAT[1] + 1.03 * math.cos(_r) / MECH_SCALE,
        SEAT[2] + (HIPS_Z - 1.03 * math.sin(_r)) / MECH_SCALE)                       # pilot's eyes (design units)
 ROOF_Y = 4.88                         # top of the roof plates
-HATCH_Z = -0.68                       # roof hatch, over the ladder
+HATCH_Z = -0.68                       # roof hatch, at the back of the cabin
 H_RANGE = [-35, 12]                   # elevation, degrees (negative = muzzle up)
 L_RANGE = [-35, 8]
 
@@ -165,16 +165,16 @@ def _with_hatch_hole(x0, x1, y0, y1, z0, z1, mat):
 
 
 def _hatch():
-    """The roof hatch, a square armored lid over the cabin, hinged at its front
-    edge (the part's pivot); it opens forward by turning about X, so the way in
-    from the back stays clear."""
+    """The roof hatch, a square armored lid over the cabin, hinged at its rear
+    edge (the part's pivot); it opens backward by turning about X, so the
+    pilot can get in over either side."""
     hz, h = HATCH_Z, HATCH_HALF
     e = [box((-h + 0.01, 4.86, hz - h + 0.01), (h - 0.01, 4.90, hz + h - 0.01), "armor"),   # lid
          box((-h + 0.05, 4.90, hz - h + 0.05), (h - 0.05, 4.91, hz + h - 0.05), "accent"),  # raised panel
          box((-0.08, 4.91, hz + 0.02), (0.08, 4.94, hz + 0.06), "steel"),                     # handle
          box((-h + 0.03, 4.84, hz - h + 0.03), (h - 0.03, 4.86, hz + h - 0.03), "darksteel")]  # underside
     for x in (-0.15, 0.15):
-        e += prism((x, 4.88, hz + h), "x", 0.02, 0.08, 6, "steel")                          # hinge knuckles
+        e += prism((x, 4.88, hz - h), "x", 0.02, 0.08, 6, "steel")                          # hinge knuckles
     return e
 
 
@@ -309,65 +309,6 @@ def _bustle():
     return e
 
 
-# The boarding ladder, on the back of the ammo bustle (design units). Its rungs
-# sit LADDER_STEP real meters apart, counted up from the ground under a
-# kneeling mech (GROUND_K, the mech frame at rest), so the climb in
-# mech_pilot.py can put hands and feet on them. The upper section is fixed to
-# the bustle's rear plate and ends in grab handles over the lid; the drop
-# section hangs below it and slides out of a tray under the bustle when the
-# mech kneels (anim "extend_y": scaled down from its top).
-LADDER_Z = -1.581                     # the rungs' plane, just behind the leaning rear plate
-LADDER_X = 0.13                       # upper rails, either side of the centerline
-DROP_X = 0.11                         # drop section rails (inside the upper ones)
-LADDER_TOP = 4.06                     # where the drop section hangs from
-LADDER_STEP = 0.30                    # real meters between rungs
-
-
-def ladder_rungs(y0: float, y1: float, ground: float) -> list[float]:
-    """Rung heights (design units) between y0 and y1 on the grid counted up
-    from `ground` (design units)."""
-    step = LADDER_STEP / MECH_SCALE
-    k = math.ceil((y0 - ground) / step - 1e-6)
-    out = []
-    while ground + k * step <= y1 + 1e-6:
-        if k >= 1:
-            out.append(ground + k * step)
-        k += 1
-    return out
-
-
-def _ladder(ground: float):
-    """The fixed upper section: rails on standoffs, rungs, grab handles that
-    curve over the lid, and the tray the drop section stows in."""
-    z, w = LADDER_Z, LADDER_X
-    e = []
-    for x in (-w, w):
-        e.append(box((x - 0.01, 4.04, z - 0.01), (x + 0.01, 4.95, z + 0.01), "steel"))        # rail
-        e.append(box((x - 0.01, 4.94, z), (x + 0.01, 4.96, -1.40), "steel"))                 # handle, over the lid
-        e.append(box((x - 0.01, 4.76, -1.41), (x + 0.01, 4.95, -1.39), "steel"))             # handle foot
-        for y, zp in ((4.15, -1.462), (4.65, -1.535)):
-            e.append(box((x - 0.008, y - 0.008, z + 0.01), (x + 0.008, y + 0.008, zp), "darksteel"))  # standoff
-    for y in ladder_rungs(4.10, 4.90, ground):
-        e.append(box((-w, y - 0.006, z - 0.006), (w, y + 0.006, z + 0.006), "darksteel"))     # rung
-    e.append(box((-0.16, 3.98, z - 0.04), (0.16, 4.08, z + 0.04), "gunmetal"))               # tray
-    e.append(box((-0.17, 3.975, z - 0.045), (0.17, 3.985, z + 0.045), "hazard"))
-    return e
-
-
-def _ladder_drop(ground: float):
-    """The drop section, deployed: rails from the tray down to just above the
-    ground under a kneeling mech, with rungs and two feet."""
-    z, w = LADDER_Z, DROP_X
-    bottom = ground + 0.10 / MECH_SCALE
-    e = []
-    for x in (-w, w):
-        e.append(box((x - 0.009, bottom, z - 0.009), (x + 0.009, LADDER_TOP, z + 0.009), "steel"))
-        e.append(box((x - 0.02, bottom - 0.01, z - 0.03), (x + 0.02, bottom, z + 0.03), "rubber"))  # foot
-    for y in ladder_rungs(bottom, LADDER_TOP - 0.02, ground):
-        e.append(box((-w, y - 0.006, z - 0.006), (w, y + 0.006, z + 0.006), "darksteel"))
-    return e
-
-
 def _antenna():
     base = (-0.55, 4.78, -1.30)
     e = [box((base[0] - 0.06, 4.76, base[2] - 0.06), (base[0] + 0.06, 4.84, base[2] + 0.06), "darksteel")]
@@ -456,10 +397,8 @@ def _light_gun():
     return e
 
 
-def torso_parts(ground_k: float = 0.0):
-    """Returns (torso parts, gun parts, segments, joints). ground_k: the ground
-    under a kneeling mech, in the mech frame at rest (design units), which the
-    boarding ladder reaches down to."""
+def torso_parts():
+    """Returns (torso parts, gun parts, segments, joints)."""
     torso: list[Part] = []
     _part(torso, Part("torso_frame", "Torso frame (hull core, hardpoints)", "structure", "waist_ring", "torso",
                       PIVOT, 650, 520, "fail", "Cracks: every gun mount shakes loose and aim wanders; at 0 the mech is wrecked",
@@ -470,7 +409,7 @@ def torso_parts(ground_k: float = 0.0):
     _part(torso, Part("torso_top", "Torso roof armor (hatch)", "armor", "torso_frame", "torso", PIVOT,
                       140, 300, "detach", "Torn off: the hull core and light gun mounts take hits from above"),
           _top(), PIVOT)
-    hinge = (0.0, 4.88, HATCH_Z + HATCH_HALF)
+    hinge = (0.0, 4.88, HATCH_Z - HATCH_HALF)
     _part(torso, Part("hatch", "Roof hatch (hinged lid over the cabin)", "armor", "torso_top", "torso", hinge,
                       20, 120, "detach", "Torn off: the cabin is open to the sky", anim="hinge_x"), _hatch(), hinge)
     left = Part("torso_side_l", "Torso side armor (left)", "armor", "torso_frame", "torso", PIVOT,
@@ -486,13 +425,6 @@ def torso_parts(ground_k: float = 0.0):
     _part(torso, Part("ammo_bustle", "Ammo bustle (magazine and feed chutes)", "ammo", "torso_frame", "torso",
                       PIVOT, 300, 220, "fail", "Feed jams with damage; at 0 the magazine cooks off and the heavy guns run dry"),
           _bustle(), PIVOT)
-    _part(torso, Part("ladder", "Boarding ladder (upper section, handles, tray)", "structure", "ammo_bustle", "torso",
-                      PIVOT, 25, 60, "detach", "Shot off: no way up while kneeling", damaged=False),
-          _ladder(ground_k), PIVOT)
-    drop = (0.0, LADDER_TOP, LADDER_Z)
-    _part(torso, Part("ladder_drop", "Boarding ladder (drop section)", "structure", "ladder", "torso", drop,
-                      20, 40, "detach", "Shot off: no way up while kneeling", anim="extend_y", damaged=False),
-          _ladder_drop(ground_k), drop)
     _part(torso, Part("antenna", "Antenna mast", "sensor", "ammo_bustle", "torso", PIVOT, 4, 20, "detach",
                       "Shot off: no radio or radar", damaged=False), _antenna(), PIVOT)
 
