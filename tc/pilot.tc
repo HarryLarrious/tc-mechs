@@ -30,7 +30,9 @@
 // where the feet and hands are; every limb is a straight Minecraft limb from
 // its hip or shoulder to that point. The head looks where the player looks.
 // The real player rides the mech's seat entity (an interaction entity),
-// placed so their eye is at the model head's center, and is hidden: from the
+// placed so their eye is at the model head's center; the body's displays ride
+// it too, so the client moves them exactly with the camera (teleported on
+// their own, they shook against it). The real player is hidden: from the
 // others with Set Entity Hidden, from themselves (third person) with
 // invisibility, and their hand item draws nothing. The shader drops the
 // model's head when the camera is inside it, so first person sees the body.
@@ -123,12 +125,12 @@ function boardNearest {
     global mBoard[line m] = 1;
     global mBoardT[line m] = 0;
     global gWalking[line m] = 1;
-    pilotBodySpawn(line m);
     line eye = default.eyeLocation;
     select entitiesByName(global mSeat[line m]);
     selectedEntity.teleport(loc(line eye.x, line eye.y - 1.03, line eye.z));
     select reset;
     default.rideEntity(global mSeat[line m]);
+    pilotBodySpawn(line m);
     ensureMechLoop();
 }
 
@@ -188,15 +190,15 @@ function pilotBodySpawn(m: num) {
     pilotBodyRemove(m);
     line uuid = global mPilot[m];
     line head = item("player_head").setHeadTexture(line uuid).setModel("mech:pilot/unit");
-    line o = global mPos[m];
-    line at = loc(line o.x, line o.y + 1, line o.z);
+    select entitiesByName(global mSeat[m]);
+    line at = selectedEntity.location;
+    select reset;
     line ids = [];
     for (line id of pilotPartIds()) {
-        game.spawnItemDisplay(line at, line head);
-        lastEntity.setDisplayTeleportDuration(1);
+        game.spawnItemDisplay(loc(line at.x, line at.y, line at.z), line head);
         lastEntity.setDisplayBrightness(line id as num, 0);
-        lastEntity.setDisplayCullingSize(2.5, 2.5);
         lastEntity.setDisplayViewRange(160);
+        lastEntity.ride(global mSeat[m]);
         line ids.append(lastEntity.uuid);
     }
     global mBody[m] = line ids;
@@ -520,10 +522,10 @@ function pilotFigure(m: num, H: vec, tl: vec, tu: vec, tf: vec, fl: vec, fr: vec
     line hfl = vec(line lx, num.clamp(line ly, -0.6, 0.5), num.max(line lz, 0.25)).setLength(1);
     line hll = vec(0, 1, 0).cross(line hfl).setLength(1);
     line hul = line hfl.cross(line hll);
-    line hf = tl * line hfl.x + tu * line hfl.y + tf * line hfl.z;
-    line hl = tl * line hll.x + tu * line hll.y + tf * line hll.z;
-    line hu = tl * line hul.x + tu * line hul.y + tf * line hul.z;
-    line headC = line neck + line hu * (4 * line px);
+    line headF = tl * line hfl.x + tu * line hfl.y + tf * line hfl.z;
+    line headL = tl * line hll.x + tu * line hll.y + tf * line hll.z;
+    line headU = tl * line hul.x + tu * line hul.y + tf * line hul.z;
+    line headC = line neck + line headU * (4 * line px);
     select entitiesByName(global mSeat[m]);
     selectedEntity.teleport(loc(line headC.x, line headC.y - 1.03, line headC.z));
     select reset;
@@ -531,12 +533,10 @@ function pilotFigure(m: num, H: vec, tl: vec, tu: vec, tf: vec, fl: vec, fr: vec
     if (line ids.len() < 6) {
         return;
     }
-    // every part stands on an anchor just above the soles (in the air)
-    line at = H - vec(0, 10 * line px, 0);
-    select entitiesByName(line ids);
-    selectedEntity.teleport(loc(line at.x, line at.y, line at.z));
-    select reset;
-    pilotPart(line ids[1], line hl, line hu, line hf, 8, 8, 8, line headC, line at);
+    // the parts ride the seat (so the client moves them with the camera,
+    // which rides it too): they stand where it seats a passenger, its top
+    line at = line headC - vec(0, 1.03 - 0.01, 0);
+    pilotPart(line ids[1], line headL, line headU, line headF, 8, 8, 8, line headC, line at);
     pilotPart(line ids[2], tl, tu, tf, 8, 12, 4, H + tu * (6 * line px), line at);
     line sh = line neck - tu * (2 * line px);
     pilotLimb(line ids[3], line sh - tl * (6 * line px), hr, 10, 2, tl, tu, tf, line at);

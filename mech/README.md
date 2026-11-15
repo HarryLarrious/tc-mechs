@@ -377,7 +377,10 @@ where you look, within what a neck allows. The walk to the mech is posed
 live, with the legs and arms swinging.
 
 You ride the mech's seat entity, placed every tick so your eye is at the
-model head's center (`tc/pilot_data.tc` gives the timeline). The shader drops the
+model head's center (`tc/pilot_data.tc` gives the timeline). The body's
+displays ride the seat too, and only their matrices change each tick. The
+client then moves them exactly with your camera; teleported on their own,
+they shook against it, worst for the torso and arms just under the camera. The shader drops the
 head when the camera is inside it, so in first person you see your arms on
 the sticks. The real player is hidden from the others (Set Entity Hidden),
 from yourself in third person (invisibility), and your hand item draws
