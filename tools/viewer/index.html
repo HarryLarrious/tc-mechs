@@ -33,7 +33,8 @@
 <div id="side">
   <div id="controls">
     <div id="joints" style="display:grid; gap:4px"></div>
-    <label><input id="walk" type="checkbox"> Walk cycle <input id="level" type="checkbox" checked> Keep foot level</label>
+    <label><input id="walk" type="checkbox"> Walk cycle <input id="level" type="checkbox" checked> Keep feet level</label>
+    <label><input id="sweep" type="checkbox"> Turret sweep <input id="fire" type="checkbox"> Spin barrels</label>
     <label>Explode <input id="explode" type="range" min="0" max="1" step="0.01" value="0"></label>
     <label><input id="damaged" type="checkbox"> Damaged models</label>
     <label><input id="xray" type="checkbox"> Ghost armor (see mechanics)</label>
@@ -62,9 +63,9 @@ view.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x14161a);
 const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 100);
-camera.position.set(6.8, 3.6, 6.4);
+camera.position.set(8.6, 4.8, 8.2);
 const controls = new OrbitControls(camera, renderer.domElement);
-const TARGET = new THREE.Vector3(0, 2.0, 0);
+const TARGET = new THREE.Vector3(0, 2.7, 0);
 controls.target.copy(TARGET);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x404040, 1.5));
 const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(4, 7, 5); scene.add(sun);
@@ -122,13 +123,15 @@ const pose = {};
 for (const j in spec.joints) pose[j] = 0;
 let bob = 0;  // body height change that keeps the lower foot on the ground
 const rad = d => d * Math.PI / 180;
-function rotAbout(p, deg) {
+function rotAbout(p, deg, axis) {
   const t = new THREE.Matrix4().makeTranslation(p[0], p[1], p[2]);
-  return t.multiply(new THREE.Matrix4().makeRotationX(rad(deg))).multiply(new THREE.Matrix4().makeTranslation(-p[0], -p[1], -p[2]));
+  const r = axis === "y" ? new THREE.Matrix4().makeRotationY(rad(deg)) : new THREE.Matrix4().makeRotationX(rad(deg));
+  return t.multiply(r).multiply(new THREE.Matrix4().makeTranslation(-p[0], -p[1], -p[2]));
 }
+let spin = 0;  // heavy barrel cluster angle
 function segMatrices() {
   const out = { pelvis: new THREE.Matrix4().makeTranslation(0, bob, 0) };
-  for (const [j, J] of Object.entries(spec.joints)) out[J.child] = out[J.parent].clone().multiply(rotAbout(J.pivot, pose[j]));
+  for (const [j, J] of Object.entries(spec.joints)) out[J.child] = out[J.parent].clone().multiply(rotAbout(J.pivot, pose[j], J.axis));
   return out;
 }
 // lift or drop the body so the lower foot stands on the ground (feet are kept level)
@@ -146,7 +149,7 @@ function groundBody() {
 // parts
 const parts = {};
 const root = new THREE.Group(); scene.add(root);
-const center = new THREE.Vector3(0, 1.9, 0);
+const center = new THREE.Vector3(0, 2.4, 0);
 const UP = new THREE.Vector3(0, 1, 0);
 for (const p of spec.parts) {
   const holder = new THREE.Group(); holder.matrixAutoUpdate = false;
@@ -162,6 +165,8 @@ for (const p of spec.parts) {
   if (p.group === "armor") dir.multiplyScalar(1.6);
   if (p.group === "actuator") dir.x += p.pivot[0] >= 0 ? 0.5 : -0.5;
   if (p.segment === "pelvis" && p.group !== "structure") dir.y += 1.2;
+  if (["torso", "hgun_l", "hgun_r", "lgun_l", "lgun_r"].includes(p.segment)) dir.y += 1.8;
+  if (p.group === "weapon") dir.x *= 1.8;
   parts[p.id] = { p, holder, intact, dmg, rest, dir, broken: false };
 }
 
@@ -173,7 +178,9 @@ function partMatrix(P, segs) {
     const q = new THREE.Quaternion().setFromUnitVectors(UP, b.sub(a).normalize());
     return new THREE.Matrix4().compose(a, q, new THREE.Vector3(1, 1, 1));
   }
-  return segs[p.segment].clone().multiply(P.rest);
+  const m = segs[p.segment].clone().multiply(P.rest);
+  if (p.anim === "spin_z") m.multiply(new THREE.Matrix4().makeRotationZ(spin));
+  return m;
 }
 
 // ui
@@ -245,11 +252,11 @@ const jbox = document.getElementById("joints");
 for (const [j, J] of Object.entries(spec.joints)) {
   const [name, t] = j.split("_");
   const lab = document.createElement("label");
-  lab.innerHTML = `<span class="n">${name[0].toUpperCase() + name.slice(1)} ${t === "l" ? "L" : "R"}</span>` +
+  lab.innerHTML = `<span class="n">${J.label}</span>` +
     `<input type="range" step="1" value="0" min="${J.range[0]}" max="${J.range[1]}"><span class="v" id="v_${j}">0°</span>`;
   jbox.appendChild(lab);
   const s = lab.querySelector("input");
-  s.oninput = () => { pose[j] = +s.value; if (name !== "ankle" && level.checked) levelFoot(t); };
+  s.oninput = () => { pose[j] = +s.value; if ((name === "hip" || name === "knee") && level.checked) levelFoot(t); };
   sliders[j] = s;
 }
 const level = document.getElementById("level");
@@ -260,6 +267,8 @@ function levelFoot(t) {
 }
 const ex = document.getElementById("explode");
 const walk = document.getElementById("walk");
+const sweep = document.getElementById("sweep");
+const fire = document.getElementById("fire");
 document.getElementById("damaged").onchange = e => { for (const k in parts) { const P = parts[k]; if (P.dmg) { P.dmg.visible = e.target.checked; P.intact.visible = !e.target.checked; } } };
 document.getElementById("xray").onchange = e => {
   for (const k in parts) {
@@ -277,7 +286,7 @@ document.getElementById("accent").oninput = e => tints[1].set(e.target.value);
 function resize() { const w = view.clientWidth, h = view.clientHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 addEventListener("resize", resize); resize();
 const clock = new THREE.Clock();
-let t = 0;
+let t = 0, ts = 0;
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
   if (walk.checked) {
@@ -289,6 +298,13 @@ renderer.setAnimationLoop(() => {
       if (level.checked) levelFoot(side); else { pose["ankle_" + side] = 0; sliders["ankle_" + side].value = 0; }
     }
   }
+  if (sweep.checked) {
+    ts += dt;
+    pose.waist = 50 * Math.sin(ts * 0.6);
+    for (const t of ["l", "r"]) { pose["elev_h" + t] = -12 + 10 * Math.sin(ts * 1.1); pose["elev_l" + t] = -15 + 15 * Math.sin(ts * 1.7 + (t === "l" ? 0 : 1.5)); }
+    for (const j of ["waist", "elev_hl", "elev_hr", "elev_ll", "elev_lr"]) sliders[j].value = pose[j];
+  }
+  if (fire.checked) spin += dt * 14;
   groundBody();
   for (const j in pose) document.getElementById("v_" + j).textContent = Math.round(pose[j]) + "°";
   const segs = segMatrices();
@@ -310,7 +326,7 @@ renderer.setAnimationLoop(() => {
   if (selected) { selBox.box.setFromObject(parts[selected].holder); selBox.visible = true; }
   controls.update(); renderer.render(scene, camera);
 });
-const VIEWS = { front:[0.6,2.4,8.5], left:[9,2.2,0.01], right:[-9,2.2,0.01], rear:[-0.6,2.8,-8.5], top:[0.01,10,0.3] };
+const VIEWS = { front:[0.8,3.2,10], left:[10.5,3.0,0.01], right:[-10.5,3.0,0.01], rear:[-0.8,3.6,-10], top:[0.01,12,0.3] };
 for (const b of document.querySelectorAll("[data-v]")) b.onclick = () => { camera.position.set(...VIEWS[b.dataset.v]); controls.target.copy(TARGET); };
 window.__viewer = { camera, controls, parts, pose, select, toggleBreak, VIEWS, TARGET };
 window.__ready = true;

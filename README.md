@@ -5,7 +5,7 @@ Walking mechs for DiamondFire, written in
 style as the cars in tc-rally_game: every part is its own resource-pack model
 on its own item display, so any part can move, take damage or break off.
 
-So far there is the lower body of a two-legged mech: the pelvis and both legs.
+The first mech walks on two legs and carries a turret torso with two heavy side guns and two light roof guns.
 
 ## Layout
 
@@ -15,6 +15,7 @@ So far there is the lower body of a two-legged mech: the pelvis and both legs.
 | [pack/](pack/) | Resource pack (Minecraft 26.3, format 97.1), namespace `mech` |
 | [pack/src/mech_parts.py](pack/src/mech_parts.py) | The leg design and the build: mirrors the leg, adds the pelvis, writes models, textures and part data |
 | [pack/src/mech_pelvis.py](pack/src/mech_pelvis.py) | The pelvis design |
+| [pack/src/mech_torso.py](pack/src/mech_torso.py) | The turret torso and its guns |
 | [pack/src/mech_lib.py](pack/src/mech_lib.py) | Shared code: materials, textures, cuboid helpers, model and item writers |
 | [tools/viewer/](tools/viewer/) | 3D viewer: pose the joints, play a walk cycle, explode or break parts |
 

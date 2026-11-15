@@ -47,6 +47,7 @@ MATERIALS: dict[str, dict] = {
     "rubber":    {},
     "vent":      {},
     "glow":      {"emit": 15},
+    "visor":     {},
 }
 
 
@@ -185,6 +186,12 @@ def make_textures() -> dict[str, Image.Image]:
     glow = _flat((90, 230, 255), noise=3, seed=20)
     ImageDraw.Draw(glow).rectangle((5, 5, 10, 10), fill=(220, 252, 255, 255))
     t["glow"] = glow
+
+    visor = _flat((16, 34, 52), noise=2, seed=21)       # dark tinted viewport
+    d = ImageDraw.Draw(visor)
+    d.line((0, 4, 15, 4), fill=(70, 130, 170, 255))
+    d.line((3, 10, 9, 10), fill=(40, 90, 125, 255))
+    t["visor"] = visor
     return t
 
 

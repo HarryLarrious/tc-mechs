@@ -10,7 +10,12 @@
   "foot_l",
   "thigh_r",
   "shin_r",
-  "foot_r"
+  "foot_r",
+  "torso",
+  "hgun_l",
+  "hgun_r",
+  "lgun_l",
+  "lgun_r"
  ],
  "joints": {
   "hip_l": {
@@ -25,7 +30,8 @@
    "range": [
     -45,
     42
-   ]
+   ],
+   "label": "Hip L"
   },
   "knee_l": {
    "pivot": [
@@ -39,7 +45,8 @@
    "range": [
     -45,
     45
-   ]
+   ],
+   "label": "Knee L"
   },
   "ankle_l": {
    "pivot": [
@@ -53,7 +60,8 @@
    "range": [
     -43,
     42
-   ]
+   ],
+   "label": "Ankle L"
   },
   "hip_r": {
    "pivot": [
@@ -67,7 +75,8 @@
    "range": [
     -45,
     42
-   ]
+   ],
+   "label": "Hip R"
   },
   "knee_r": {
    "pivot": [
@@ -81,7 +90,8 @@
    "range": [
     -45,
     45
-   ]
+   ],
+   "label": "Knee R"
   },
   "ankle_r": {
    "pivot": [
@@ -95,12 +105,89 @@
    "range": [
     -43,
     42
-   ]
+   ],
+   "label": "Ankle R"
+  },
+  "waist": {
+   "pivot": [
+    0.0,
+    3.9,
+    0.0
+   ],
+   "axis": "y",
+   "parent": "pelvis",
+   "child": "torso",
+   "range": [
+    -180,
+    180
+   ],
+   "label": "Waist"
+  },
+  "elev_hl": {
+   "pivot": [
+    1.3,
+    4.4,
+    0.05
+   ],
+   "axis": "x",
+   "parent": "torso",
+   "child": "hgun_l",
+   "range": [
+    -35,
+    12
+   ],
+   "label": "Heavy L"
+  },
+  "elev_ll": {
+   "pivot": [
+    0.45,
+    5.08,
+    0.05
+   ],
+   "axis": "x",
+   "parent": "torso",
+   "child": "lgun_l",
+   "range": [
+    -35,
+    8
+   ],
+   "label": "Light L"
+  },
+  "elev_hr": {
+   "pivot": [
+    -1.3,
+    4.4,
+    0.05
+   ],
+   "axis": "x",
+   "parent": "torso",
+   "child": "hgun_r",
+   "range": [
+    -35,
+    12
+   ],
+   "label": "Heavy R"
+  },
+  "elev_lr": {
+   "pivot": [
+    -0.45,
+    5.08,
+    0.05
+   ],
+   "axis": "x",
+   "parent": "torso",
+   "child": "lgun_r",
+   "range": [
+    -35,
+    8
+   ],
+   "label": "Light R"
   }
  },
  "anims": {
   "fixed": "rigid with its segment",
-  "aim": "at its pivot on its segment, local +Y aimed at links.to on links.to_segment (pistons)"
+  "aim": "at its pivot on its segment, local +Y aimed at links.to on links.to_segment (pistons)",
+  "spin_z": "rigid with its segment, then turned about its own local Z (heavy gun barrels)"
  },
  "tints": {
   "0": "armor paint",
@@ -111,7 +198,7 @@
   "#e0761c"
  ],
  "damage_state": "custom_model_data string 0 = \"damaged\" swaps to the _damaged model",
- "total_mass": 3501.2,
+ "total_mass": 6366.2,
  "parts": [
   {
    "id": "pelvis",
@@ -1954,6 +2041,717 @@
     "rest_length": 1.1008
    },
    "elements": 13
+  },
+  {
+   "id": "torso_frame",
+   "label": "Torso frame (hull core, hardpoints)",
+   "group": "structure",
+   "parent": "waist_ring",
+   "segment": "torso",
+   "item_model": "mech:torso/torso_frame",
+   "pivot": [
+    0.0,
+    4.4,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 650,
+   "hp": 520,
+   "on_break": "fail",
+   "effect": "Cracks: every gun mount shakes loose and aim wanders; at 0 the mech is wrecked",
+   "shield": [
+    "torso_front",
+    "torso_top"
+   ],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.9,
+     -0.48,
+     -0.95
+    ],
+    [
+     0.9,
+     0.48,
+     0.7
+    ]
+   ],
+   "links": {},
+   "elements": 22
+  },
+  {
+   "id": "torso_front",
+   "label": "Torso front armor (glacis, cheeks)",
+   "group": "armor",
+   "parent": "torso_frame",
+   "segment": "torso",
+   "item_model": "mech:torso/torso_front",
+   "pivot": [
+    0.0,
+    4.4,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 220,
+   "hp": 420,
+   "on_break": "detach",
+   "effect": "Torn off: the sensors and hull core take front hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.92,
+     -0.372,
+     0.568
+    ],
+    [
+     0.92,
+     0.496,
+     1.007
+    ]
+   ],
+   "links": {},
+   "elements": 20
+  },
+  {
+   "id": "torso_top",
+   "label": "Torso roof armor (hatch)",
+   "group": "armor",
+   "parent": "torso_frame",
+   "segment": "torso",
+   "item_model": "mech:torso/torso_top",
+   "pivot": [
+    0.0,
+    4.4,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 140,
+   "hp": 300,
+   "on_break": "detach",
+   "effect": "Torn off: the hull core and light gun mounts take hits from above",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.854,
+     0.359,
+     -0.95
+    ],
+    [
+     0.854,
+     0.54,
+     0.63
+    ]
+   ],
+   "links": {},
+   "elements": 20
+  },
+  {
+   "id": "torso_side_l",
+   "label": "Torso side armor (left)",
+   "group": "armor",
+   "parent": "torso_frame",
+   "segment": "torso",
+   "item_model": "mech:torso/torso_side_l",
+   "pivot": [
+    0.0,
+    4.4,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 120,
+   "hp": 320,
+   "on_break": "detach",
+   "effect": "Torn off: the hull and the heavy gun's hardpoint take side hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     0.733,
+     -0.424,
+     -1.02
+    ],
+    [
+     0.967,
+     0.419,
+     0.7
+    ]
+   ],
+   "links": {},
+   "elements": 8
+  },
+  {
+   "id": "torso_side_r",
+   "label": "Torso side armor (right)",
+   "group": "armor",
+   "parent": "torso_frame",
+   "segment": "torso",
+   "item_model": "mech:torso/torso_side_r",
+   "pivot": [
+    -0.0,
+    4.4,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 120,
+   "hp": 320,
+   "on_break": "detach",
+   "effect": "Torn off: the hull and the heavy gun's hardpoint take side hits directly",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.967,
+     -0.424,
+     -1.02
+    ],
+    [
+     -0.733,
+     0.419,
+     0.7
+    ]
+   ],
+   "links": {},
+   "elements": 8
+  },
+  {
+   "id": "sensors",
+   "label": "Sensors (viewport, camera pod, rangefinder)",
+   "group": "sensor",
+   "parent": "torso_frame",
+   "segment": "torso",
+   "item_model": "mech:torso/sensors",
+   "pivot": [
+    0.0,
+    4.4,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 25,
+   "hp": 60,
+   "on_break": "fail",
+   "effect": "Damaged: aim gets sloppy; at 0 the guns fire without the rangefinder",
+   "shield": [
+    "torso_front"
+   ],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.62,
+     0.005,
+     0.3
+    ],
+    [
+     0.62,
+     0.66,
+     1.002
+    ]
+   ],
+   "links": {},
+   "elements": 21
+  },
+  {
+   "id": "ammo_bustle",
+   "label": "Ammo bustle (magazine and feed chutes)",
+   "group": "ammo",
+   "parent": "torso_frame",
+   "segment": "torso",
+   "item_model": "mech:torso/ammo_bustle",
+   "pivot": [
+    0.0,
+    4.4,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 300,
+   "hp": 220,
+   "on_break": "fail",
+   "effect": "Feed jams with damage; at 0 the magazine cooks off and the heavy guns run dry",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -1.07,
+     -0.331,
+     -1.546
+    ],
+    [
+     1.07,
+     0.38,
+     -0.3
+    ]
+   ],
+   "links": {},
+   "elements": 19
+  },
+  {
+   "id": "antenna",
+   "label": "Antenna mast",
+   "group": "sensor",
+   "parent": "ammo_bustle",
+   "segment": "torso",
+   "item_model": "mech:torso/antenna",
+   "pivot": [
+    0.0,
+    4.4,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 4,
+   "hp": 20,
+   "on_break": "detach",
+   "effect": "Shot off: no radio or radar",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.61,
+     0.36,
+     -1.388
+    ],
+    [
+     -0.422,
+     1.38,
+     -1.24
+    ]
+   ],
+   "links": {},
+   "elements": 4
+  },
+  {
+   "id": "heavy_mount_l",
+   "label": "Heavy gun mount (left)",
+   "group": "actuator",
+   "parent": "torso_frame",
+   "segment": "torso",
+   "item_model": "mech:guns/heavy_mount_l",
+   "pivot": [
+    1.3,
+    4.4,
+    0.05
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 70,
+   "hp": 200,
+   "on_break": "fail",
+   "effect": "Elevation motor weakens: the gun lifts slower; at 0 it stays where it was",
+   "shield": [
+    "heavy_gun_l"
+   ],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.41,
+     -0.22,
+     -0.41
+    ],
+    [
+     -0.19,
+     0.22,
+     0.31
+    ]
+   ],
+   "links": {},
+   "elements": 48
+  },
+  {
+   "id": "heavy_gun_l",
+   "label": "Heavy rotary cannon (left)",
+   "group": "weapon",
+   "parent": "heavy_mount_l",
+   "segment": "hgun_l",
+   "item_model": "mech:guns/heavy_gun_l",
+   "pivot": [
+    1.3,
+    4.4,
+    0.05
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 380,
+   "hp": 260,
+   "on_break": "detach",
+   "effect": "Damaged: slower fire; shot off with its barrels",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.21,
+     -0.292,
+     -0.63
+    ],
+    [
+     0.225,
+     0.316,
+     1.98
+    ]
+   ],
+   "links": {},
+   "elements": 38
+  },
+  {
+   "id": "heavy_barrels_l",
+   "label": "Heavy cannon barrel cluster (left)",
+   "group": "weapon",
+   "parent": "heavy_gun_l",
+   "segment": "hgun_l",
+   "item_model": "mech:guns/heavy_barrels_l",
+   "pivot": [
+    1.3,
+    4.4,
+    0.7
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "spin_z",
+   "mass": 140,
+   "hp": 160,
+   "on_break": "detach",
+   "effect": "Bent: shots spread; shot off: the cannon cannot fire",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.13,
+     -0.13,
+     0.0
+    ],
+    [
+     0.13,
+     0.13,
+     1.85
+    ]
+   ],
+   "links": {},
+   "elements": 46
+  },
+  {
+   "id": "light_mount_l",
+   "label": "Light gun pintle (left)",
+   "group": "actuator",
+   "parent": "torso_top",
+   "segment": "torso",
+   "item_model": "mech:guns/light_mount_l",
+   "pivot": [
+    0.45,
+    5.08,
+    0.05
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 18,
+   "hp": 80,
+   "on_break": "detach",
+   "effect": "Torn off with its gun",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.155,
+     -0.22,
+     -0.155
+    ],
+    [
+     0.205,
+     0.06,
+     0.155
+    ]
+   ],
+   "links": {},
+   "elements": 25
+  },
+  {
+   "id": "light_gun_l",
+   "label": "Light machine gun (left)",
+   "group": "weapon",
+   "parent": "light_mount_l",
+   "segment": "lgun_l",
+   "item_model": "mech:guns/light_gun_l",
+   "pivot": [
+    0.45,
+    5.08,
+    0.05
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 35,
+   "hp": 90,
+   "on_break": "detach",
+   "effect": "Damaged: jams now and then; shot off: one gun fewer",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.125,
+     -0.1,
+     -0.4
+    ],
+    [
+     0.125,
+     0.18,
+     1.03
+    ]
+   ],
+   "links": {},
+   "elements": 23
+  },
+  {
+   "id": "heavy_mount_r",
+   "label": "Heavy gun mount (right)",
+   "group": "actuator",
+   "parent": "torso_frame",
+   "segment": "torso",
+   "item_model": "mech:guns/heavy_mount_r",
+   "pivot": [
+    -1.3,
+    4.4,
+    0.05
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 70,
+   "hp": 200,
+   "on_break": "fail",
+   "effect": "Elevation motor weakens: the gun lifts slower; at 0 it stays where it was",
+   "shield": [
+    "heavy_gun_r"
+   ],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     0.19,
+     -0.22,
+     -0.41
+    ],
+    [
+     0.41,
+     0.22,
+     0.31
+    ]
+   ],
+   "links": {},
+   "elements": 48
+  },
+  {
+   "id": "heavy_gun_r",
+   "label": "Heavy rotary cannon (right)",
+   "group": "weapon",
+   "parent": "heavy_mount_r",
+   "segment": "hgun_r",
+   "item_model": "mech:guns/heavy_gun_r",
+   "pivot": [
+    -1.3,
+    4.4,
+    0.05
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 380,
+   "hp": 260,
+   "on_break": "detach",
+   "effect": "Damaged: slower fire; shot off with its barrels",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.225,
+     -0.292,
+     -0.63
+    ],
+    [
+     0.21,
+     0.316,
+     1.98
+    ]
+   ],
+   "links": {},
+   "elements": 38
+  },
+  {
+   "id": "heavy_barrels_r",
+   "label": "Heavy cannon barrel cluster (right)",
+   "group": "weapon",
+   "parent": "heavy_gun_r",
+   "segment": "hgun_r",
+   "item_model": "mech:guns/heavy_barrels_r",
+   "pivot": [
+    -1.3,
+    4.4,
+    0.7
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "spin_z",
+   "mass": 140,
+   "hp": 160,
+   "on_break": "detach",
+   "effect": "Bent: shots spread; shot off: the cannon cannot fire",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.13,
+     -0.13,
+     0.0
+    ],
+    [
+     0.13,
+     0.13,
+     1.85
+    ]
+   ],
+   "links": {},
+   "elements": 46
+  },
+  {
+   "id": "light_mount_r",
+   "label": "Light gun pintle (right)",
+   "group": "actuator",
+   "parent": "torso_top",
+   "segment": "torso",
+   "item_model": "mech:guns/light_mount_r",
+   "pivot": [
+    -0.45,
+    5.08,
+    0.05
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 18,
+   "hp": 80,
+   "on_break": "detach",
+   "effect": "Torn off with its gun",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.205,
+     -0.22,
+     -0.155
+    ],
+    [
+     0.155,
+     0.06,
+     0.155
+    ]
+   ],
+   "links": {},
+   "elements": 25
+  },
+  {
+   "id": "light_gun_r",
+   "label": "Light machine gun (right)",
+   "group": "weapon",
+   "parent": "light_mount_r",
+   "segment": "lgun_r",
+   "item_model": "mech:guns/light_gun_r",
+   "pivot": [
+    -0.45,
+    5.08,
+    0.05
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 35,
+   "hp": 90,
+   "on_break": "detach",
+   "effect": "Damaged: jams now and then; shot off: one gun fewer",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.125,
+     -0.1,
+     -0.4
+    ],
+    [
+     0.125,
+     0.18,
+     1.03
+    ]
+   ],
+   "links": {},
+   "elements": 23
   }
  ]
 }
