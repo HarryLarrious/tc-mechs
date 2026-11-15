@@ -59,7 +59,8 @@ their posed pivot instead, with local +Y pointing at their posed `links.to`
 point. Spin parts (`spin_z`, the heavy barrel clusters) take one more turn
 about their own Z axis. `parts.json` gives each joint its axis, pivot and
 range. Inside that range the rod
-stays in the barrel (capped at ±45°).
+stays in the barrel. The leg joints are also capped short of what the
+pistons allow: the hip to 90°, the knee to 75°.
 
 The models are 1/5 size (`MODEL_SCALE` 0.2, where the rally car's are half
 size), so a part can reach 7.5 m from its pivot inside Minecraft's -16..32
@@ -110,17 +111,21 @@ glass.
 
 `parts.json` gives `cockpit_seat` (the seat's top center), `cockpit_eye`
 (where the pilot's eyes go) and `cockpit_recline`. The viewer seats a
-reclined player there for scale. A Minecraft player cannot lean back while
-riding, so in game the pilot will need a drawn body that reclines. The rally
-game's driver model works this way, with the real player hidden and the
-camera at `cockpit_eye`.
+reclined player there for scale. In game the pilot is a drawn body that
+reclines with the chair (see [Pilot model](#pilot-model)).
+
+The roof hatch (`hatch`, over the ladder at the back of the cabin) is a
+separate part on a hinge along its back edge. It turns about its own X axis
+(anim `hinge_x`): 0° is shut, -110° is open. The ceiling and roof plates have
+a matching square hole.
 
 | Part | What it is |
 | --- | --- |
 | `torso_frame` | Hollow hull (floor, walls, ceiling, front wall with the viewport opening), base disc and collar, belly plate, and the hardpoints for the side and roof guns |
 | `cockpit` | Reclined pilot's chair, two joysticks, three screens |
 | `torso_front` | Lower and upper glacis that meet in a beak around the viewport, angled cheeks, accent stripes |
-| `torso_top` | Roof with raised panels, a hatch in a warning ring, and edge chamfers |
+| `torso_top` | Roof with raised panels, a hatch hole in a warning ring, and edge chamfers |
+| `hatch` | The roof hatch: armored lid with a handle and hinge knuckles, opens on its hinge |
 | `torso_side_l`, `torso_side_r` | Sloped side slabs (top leaning in) and lower skirts. Each comes off on its own |
 | `sensors` | Viewport visor with a running light under it, and a twin-lens camera pod and rangefinder on the roof |
 | `ammo_bustle` | Armored magazine behind the hull, with feed chutes running to both heavy gun mounts |
@@ -217,26 +222,31 @@ smoothing, as there is for the rally car's wheels. A walking foot plants flat
 on whatever block tops are under it.
 
 - **Footholds:** the ground under a foot is the highest block top under its
-  heel, middle, toe and both sides. It is found by a raycast down from 2.5 m
+  heel, middle, toe and both sides. It is found by a raycast down from 3.7 m
   above the foot to 3.2 m below it, cached per column for two seconds. A
   block at the top of that reach is a wall, not ground. The middle of the
   foot must be on the top too, so a foot never perches on an edge by its heel
   or toe.
-- **Choosing a step:** the foot tries the planned landing spot, then a longer
-  step (to get the whole foot onto a step), then shorter ones. It takes the
-  first spot that meets every test:
+- **Choosing a step:** the foot tries the planned landing spot, then longer
+  steps, then shorter ones. A longer step gets the whole foot onto a step,
+  and it brings the trailing foot up a tall step that the body is waiting
+  at. It takes the first spot that meets every test:
   - it has ground,
-  - it is within 1.2 m (one block) above or below the other foot,
+  - it is within 3.2 m (three blocks) above or below the other foot,
   - the foot's sweep from heel to toe crosses nothing higher than both ends,
     checked every half block,
-  - the leg can reach it, with every joint at least 1° inside its range and
-    the leg under 97% of its length.
+  - the leg can reach it at some body height between the two feet, with
+    every joint at least 1° inside its range and the leg under 97% of its
+    length.
 
   A step up or down lifts the foot higher, by 0.6 × the height difference.
-  A 2-block ledge or drop is a wall to this mech: its knee cannot fold far
-  enough to plant a foot two blocks up.
-- **Body height:** it follows the average height of the feet at 2.1 m/s,
-  except when that would stretch a planted leg out of reach.
+  The mech climbs steps of up to three blocks, and a 4-block ledge is a wall
+  to it. A drop deeper than three blocks is walked off (see Gravity).
+- **Body height:** it follows the feet at 2.1 m/s, with a swinging foot
+  counted where it will land, so the body is already moving up or down a
+  tall step as the foot gets there. It stops short of any height where a
+  planted leg would go out of reach (a leg already out of reach never stops a
+  move that helps it), or where a probe would hit a block.
 - **Hitbox:** 32 collision probe points (`PROBES` in `mech_lib.py`) on the
   hips, knees, shins, turret hull and heavy guns. The body probes turn with
   the heading, and the hull and gun probes turn with the torso. A move or turn
@@ -246,16 +256,115 @@ on whatever block tops are under it.
   planted leg would overstretch, so a mech whose feet can't go on stops and
   waits.
 
+### Gravity
+
+- **Lost ground:** every tick a planted foot checks the block top under it.
+  If its ground is gone or lower, or a block has been placed into it, the
+  foot steps at once to the best landing spot it can find.
+- **Walking off a drop:** walking toward a drop deeper than three blocks, the
+  foot steps out level over it. It then has no ground, so the mech falls. It
+  falls from any height.
+- **Falling:** if no spot works, or both feet lose their ground, the mech
+  falls. Gravity is 15 m/s², heavier-feeling than a player's, up to 40 m/s.
+  The feet swing to hang under the hips. It lands when a foot meets a block
+  top below it; a foot still resting on an edge does not hold it up. If
+  falling would put a probe or a foot inside a block, the whole mech is
+  pushed clear (forward first, then back, then sideways, up to 3 m), so it
+  slides off an edge rather than through it. If nothing clears, it comes to
+  rest where it is. A mech spawned in the air falls too.
+- **Landing:** every landing reports its impact speed to `mechLanded(m,
+  speed)` in `tc/gait.tc`. For now it only stores it, in `gImpact`; the
+  damage model will hurt the mech there when it lands too hard. For scale, a
+  12-block drop lands at about 19 m/s and a 30-block drop at 30 m/s. On a
+  hard landing the body sinks up to 0.32 m into its legs and comes back up at
+  1 m/s.
+- **Idle mechs:** a mech that has stood still with nothing to do for a second
+  stops being walked and redrawn. Its feet are still checked every half
+  second, and it wakes up as soon as one loses its ground.
+
 `tools/gait_check.py` walks the reference model over test courses:
 
-- climbing a 1-block step and a staircase, and stepping down,
-- stopping at a 2-block ledge, a 2-block drop, a 3-block wall one block
-  thick, a cliff, and a bar at turret height,
-- turning on the spot beside a tall wall.
+- climbing 1-, 2- and 3-block steps (at full and half speed) and a
+  staircase, and stepping back down,
+- stopping at a 4-block ledge, a 4-block wall one block thick, a 4-block
+  cliff, and a bar at turret height,
+- walking off 12-, 14- and 30-block cliffs, falling and landing (checking the
+  landing speed),
+- turning on the spot beside a tall wall,
+- falling: spawned 8 m up, standing on a platform that is removed, and a pit
+  opening under one foot (it steps aside instead of falling).
 
 It checks that no probe ever ends up inside a block and that every joint
 stays in range. The viewer's "Course" menu builds the same kinds of
-obstacles.
+obstacles, including a 4-block platform. "Remove blocks under it" knocks a
+hole under the mech to watch it fall.
+
+## Parked kneel
+
+A mech without a pilot and with nothing to do goes down on its left knee
+(`KNEEL_POSE` in `pack/src/mech_lib.py`, `mechKneelPose()` in game). It first
+stops and lets its feet settle. Then over `kneel_time` (1.5 s) the leg
+joints blend from the walk's inverse kinematics into the kneel pose and the
+body drops `kneel_drop` (1.57 m). The right foot stays flat on the ground
+ahead and the left knee guard rests just above the ground. `@walk`, `@turn`
+and `@follow` make it stand up first, the same way back. A new mech spawns
+kneeling.
+
+The pose was found by a search over the joint ranges, which is why the hip
+can now swing to -105°.
+
+## Piloting
+
+`@board` starts boarding the nearest free mech within 30 blocks
+(`tc/pilot.tc`). It is a sequence:
+
+1. Your pilot body appears where you stand and the real you is hidden. The
+   mech kneels and opens its roof hatch.
+2. You are lifted in an arc to above the hatch, down through it into the
+   cabin, and forward into the chair (2.5 s).
+3. The hatch shuts.
+4. The mech stands up, and you have the controls.
+
+Getting out (F or `@exit`) runs it backwards: the mech kneels, the hatch
+opens, you go up out of it and down in an arc to the ground on the mech's
+left, and your real body comes back there. The hatch then shuts and the mech
+stays parked.
+
+| Control | What it does |
+| --- | --- |
+| W / S | Walk forward (full speed) / back (half speed) |
+| A / D | Turn left / right on the legs |
+| Look around | The turret turns toward where you look, at 60°/s, and all four guns tilt to your pitch |
+| F | Get out (`@exit` too) |
+| Shift | Nothing: dismounting is cancelled, so you can't fall out by accident |
+
+The walk, the terrain and gravity all apply as before. The legs carry the
+body where you steer, and the turret aims on its own, so you can walk one way
+while watching another. A piloted mech never goes idle. The action bar shows
+speed, heading, how far the turret lags behind your aim, the last landing's
+impact speed, and plot CPU.
+
+### Pilot model
+
+The pilot is your own skin on six item displays, ported from the rally game's
+driver model (`pack/src/mech_pilot.py`). Each display holds your player head.
+The pack's core shader (`pack/assets/minecraft/shaders/core/entity.*`) draws
+a head as another body part when the display's brightness marks it (sky
+light 0, block light = part id: 1 head, 2 torso, 3 and 4 right and left arm,
+5 and 6 right and left leg).
+
+The torso, arms and legs are posed in their item models, reclined in the
+chair with the hands on the joysticks. Their displays take the torso
+segment's matrix, so they turn with the turret. The head is posed every tick
+to look where you look (within what a neck allows). Along the boarding path
+the whole body moves by an offset, in its seated pose.
+
+You ride the mech's seat entity, placed every tick so your eye is at the
+model head's center (`tc/pilot_data.tc` gives the pose). The shader drops the
+head when the camera is inside it, so in first person you see your arms on
+the sticks. The real player is hidden from the others (Set Entity Hidden),
+from yourself in third person (invisibility), and your hand item draws
+nothing (`mech:empty`).
 
 ## Viewer
 
@@ -263,15 +372,16 @@ obstacles.
 and the four gun elevations. "Walk" runs the procedural walk: W and S walk
 forward and back, A and D turn, and the camera follows the mech. "Feet level"
 keeps the ankles flat. "Turret sweep" swings the torso and aims the guns, and
-"Spin barrels" turns the heavy barrel clusters.
+"Spin barrels" turns the heavy barrel clusters. "Parked (kneel)" blends the
+mech down on one knee and back, "Hatch open" opens the roof hatch, and a
+reclined pilot figure sits in the chair.
 
 ## Not done yet
 
 - Collision limits: the joint ranges keep the pistons working but do not stop
   parts from passing through each other.
-- Game code: player controls, firing and damage. `tc/` can spawn, pose, walk
-  over blocks and remove mechs so far. Gravity is not done: a mech whose
-  ground is removed under it does not fall.
+- Game code: firing and damage. `tc/` can spawn, pose, walk over blocks
+  (with gravity), be piloted and remove mechs so far.
 - Not loaded in game yet; the models have only been checked in the viewer.
 
 ## Plot code

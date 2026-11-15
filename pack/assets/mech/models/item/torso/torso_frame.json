@@ -1017,12 +1017,216 @@
    "from": [
     2.624,
     10.4192,
-    1.616
+    4.9088
    ],
    "to": [
     13.376,
     10.688,
     12.704
+   ],
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    }
+   }
+  },
+  {
+   "from": [
+    2.624,
+    10.4192,
+    1.616
+   ],
+   "to": [
+    13.376,
+    10.688,
+    1.952
+   ],
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    }
+   }
+  },
+  {
+   "from": [
+    2.624,
+    10.4192,
+    1.952
+   ],
+   "to": [
+    6.5216,
+    10.688,
+    4.9088
+   ],
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    }
+   }
+  },
+  {
+   "from": [
+    9.4784,
+    10.4192,
+    1.952
+   ],
+   "to": [
+    13.376,
+    10.688,
+    4.9088
    ],
    "faces": {
     "north": {

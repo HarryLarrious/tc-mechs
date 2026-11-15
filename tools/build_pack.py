@@ -21,17 +21,25 @@ Publish: adds the zip and latest.json to the orphan pack-dist branch with git
 plumbing (the working tree is not touched). The pack then loads from
 https://raw.githubusercontent.com/<owner>/<repo>/pack-dist/<file>.
 
-Same tool as tc-rally_game's, without the shader checks (this pack has none).
+Shaders: every shader under assets/*/shaders/ compiles with glslc the way the
+26.3 client compiles it (shaderc, Vulkan 1.2, auto-bound uniforms, includes as
+<namespace:path.glsl>), under each define set in tools/shader_variants.json.
+Vanilla includes come from the 26.3 client jar or an extracted assets dir
+(--vanilla, $MC_VANILLA, or the usual launcher locations). Same tool as
+tc-rally_game's (the pilot model uses its entity shader).
 """
 
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import hashlib
 import io
+import itertools
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -41,6 +49,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PACK = ROOT / "pack"
 BUILD = ROOT / "build"
+VARIANTS = Path(__file__).resolve().parent / "shader_variants.json"
 
 TARGET_FORMAT = (97, 1)  # Minecraft 26.3
 MC_VERSION = "26.3"
@@ -51,7 +60,11 @@ ZIP_PREFIX = "mech-pack-"
 TOP_FILES = ("pack.mcmeta", "pack.png")
 TOP_DIRS = ("assets",)
 
+STAGES = {".vsh": "vert", ".fsh": "frag"}
+INCLUDE_RE = re.compile(r'^(\s*#\s*include\s+)<([a-z0-9_.-]+):([a-z0-9_./-]+)>(.*)$')
 PATH_RE = re.compile(r"^[a-z0-9_.-]+(/[a-z0-9_.-]+)*$")
+# Like the client: Vulkan 1.2 target, auto-bound uniforms, no optimisation.
+GLSLC_ARGS = ["--target-env=vulkan1.2", "-fauto-bind-uniforms", "-O0"]
 
 
 class BuildError(Exception):
@@ -140,6 +153,161 @@ def check_files(files: list[Path]) -> list[str]:
                 load_json(PACK / rel)
             except (ValueError, UnicodeDecodeError) as e:
                 errors.append(f"{rel}: {e}")
+    return errors
+
+
+# ---------------------------------------------------------------- shaders
+
+
+def find_vanilla(explicit: str | None) -> Path | None:
+    """Return a 26.3 client jar or a dir containing assets/minecraft/shaders."""
+    candidates = []
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+    if os.environ.get("MC_VANILLA"):
+        candidates.append(Path(os.environ["MC_VANILLA"]).expanduser())
+    home = Path.home()
+    appdata = Path(os.environ.get("APPDATA", home / "AppData/Roaming"))
+    candidates += [
+        home / f".minecraft/versions/{MC_VERSION}/{MC_VERSION}.jar",
+        appdata / f".minecraft/versions/{MC_VERSION}/{MC_VERSION}.jar",
+        home / f"Library/Application Support/minecraft/versions/{MC_VERSION}/{MC_VERSION}.jar",
+        home / f".local/share/PrismLauncher/libraries/com/mojang/minecraft/{MC_VERSION}/minecraft-{MC_VERSION}-client.jar",
+        home / f".var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/libraries/com/mojang/minecraft/{MC_VERSION}/minecraft-{MC_VERSION}-client.jar",
+    ]
+    for c in candidates:
+        if c.is_file() or (c / "assets/minecraft/shaders").is_dir():
+            return c
+    if explicit:
+        raise BuildError(f"--vanilla {explicit}: not a client jar or a dir with assets/minecraft/shaders")
+    return None
+
+
+def stage_vanilla_includes(source: Path, dest: Path) -> None:
+    """Copy vanilla shader includes into dest/<namespace>/<path>."""
+    prefix = "assets/minecraft/shaders/include/"
+    if source.is_file():
+        with zipfile.ZipFile(source) as jar:
+            for name in jar.namelist():
+                if name.startswith(prefix) and name.endswith(".glsl"):
+                    out = dest / "minecraft" / name[len(prefix):]
+                    out.parent.mkdir(parents=True, exist_ok=True)
+                    out.write_bytes(jar.read(name))
+    else:
+        base = source / prefix
+        for path in base.rglob("*.glsl"):
+            out = dest / "minecraft" / path.relative_to(base)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, out)
+
+
+def rewrite_includes(text: str) -> str:
+    """Turn #include <ns:path> into a relative path glslc can resolve on any OS.
+
+    Lines are rewritten one for one, so glslc's line numbers stay correct."""
+    out = []
+    for line in text.splitlines():
+        m = INCLUDE_RE.match(line)
+        out.append(f'{m.group(1)}<{m.group(2)}/{m.group(3)}>{m.group(4)}' if m else line)
+    return "\n".join(out) + "\n"
+
+
+def shader_id(rel: Path) -> str:
+    """assets/minecraft/shaders/core/text.vsh -> minecraft:core/text"""
+    parts = rel.parts
+    return f"{parts[1]}:{'/'.join(parts[3:])[: -len(rel.suffix)]}"
+
+
+def variant_sets(spec: dict, table: dict) -> list[dict[str, str]]:
+    flags = spec.get("flags", [])
+    values = spec.get("values", {})
+    oit_modes: list[dict[str, str]] = [{}]
+    if spec.get("oit"):
+        for stage in table["oit_stages"].values():
+            oit_modes.append({**table["oit_base"], **stage})
+    device = [{}, {m: "" for m in table["device_macros"]}]
+    value_choices = [[(k, v) for v in opts] for k, opts in values.items()]
+
+    sets = []
+    for n in range(len(flags) + 1):
+        for chosen in itertools.combinations(flags, n):
+            for picks in itertools.product(*value_choices):
+                for oit in oit_modes:
+                    for dev in device:
+                        d = {f: "" for f in chosen}
+                        d.update({k: v for k, v in picks if v is not None})
+                        d.update(oit)
+                        d.update(dev)
+                        sets.append(d)
+    return sets
+
+
+def compile_one(glslc: str, src: Path, stage: str, inc: Path, defines: dict[str, str]):
+    args = [glslc, f"-fshader-stage={stage}", *GLSLC_ARGS, "-I", str(inc)]
+    args += [f"-D{k}={v}" if v else f"-D{k}" for k, v in sorted(defines.items())]
+    args += [str(src), "-o", os.devnull]
+    proc = subprocess.run(args, capture_output=True, text=True)
+    return proc.returncode, (proc.stderr or proc.stdout).strip()
+
+
+def check_shaders(files: list[Path], vanilla_arg: str | None) -> list[str]:
+    shaders = [f for f in files if len(f.parts) > 3 and f.parts[2] == "shaders" and f.parts[3] != "include"
+               and f.suffix in STAGES]
+    if not shaders:
+        return []
+    glslc = shutil.which("glslc")
+    if not glslc:
+        raise BuildError("glslc not found: install shaderc (Vulkan SDK or your distro's shaderc/glslc package)")
+    vanilla = find_vanilla(vanilla_arg)
+    if vanilla is None:
+        raise BuildError(
+            f"vanilla {MC_VERSION} shaders not found: pass --vanilla <client jar or extracted dir> "
+            "or set MC_VANILLA"
+        )
+    table = load_json(VARIANTS)
+    errors: list[str] = []
+    jobs = []
+    with tempfile.TemporaryDirectory(prefix="rallypack-") as tmp:
+        tmp = Path(tmp)
+        inc = tmp / "include"
+        stage_vanilla_includes(vanilla, inc)
+        # Pack includes override vanilla ones with the same id.
+        for rel in files:
+            if len(rel.parts) > 4 and rel.parts[2:4] == ("shaders", "include") and rel.suffix == ".glsl":
+                out = inc / rel.parts[1] / Path(*rel.parts[4:])
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_text(rewrite_includes((PACK / rel).read_text(encoding="utf-8")), encoding="utf-8")
+        for incfile in inc.rglob("*.glsl"):
+            incfile.write_text(rewrite_includes(incfile.read_text(encoding="utf-8")), encoding="utf-8")
+
+        for rel in shaders:
+            sid = shader_id(rel)
+            spec = table["shaders"].get(sid)
+            if spec is None:
+                if sid.startswith("minecraft:core/"):
+                    errors.append(f"{rel}: {sid} has no entry in tools/shader_variants.json; add its defines")
+                    continue
+                spec = {}
+            staged = tmp / "src" / rel
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            staged.write_text(rewrite_includes((PACK / rel).read_text(encoding="utf-8")), encoding="utf-8")
+            for defines in variant_sets(spec, table):
+                jobs.append((rel, staged, STAGES[rel.suffix], defines))
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+            futures = {pool.submit(compile_one, glslc, staged, stage, inc, d): (rel, d)
+                       for rel, staged, stage, d in jobs}
+            failed: dict[Path, tuple[dict, str]] = {}
+            for fut in concurrent.futures.as_completed(futures):
+                rel, d = futures[fut]
+                code, msg = fut.result()
+                # Report the failing variant with the fewest defines: easiest to reproduce.
+                if code != 0 and (rel not in failed or len(d) < len(failed[rel][0])):
+                    failed[rel] = (d, msg.replace(str(tmp / "src") + os.sep, "pack/").replace(str(tmp), "<staged>"))
+        for rel, (d, msg) in sorted(failed.items()):
+            shown = " ".join(f"{k}={v}" if v else k for k, v in sorted(d.items())) or "(no defines)"
+            errors.append(f"{rel}: fails with {shown}\n{msg}")
+    print(f"shaders: {len(shaders)} file(s), {len(jobs)} compile(s), {len(errors)} error(s)")
     return errors
 
 
@@ -271,13 +439,14 @@ def main() -> int:
     ap.add_argument("--check", action="store_true", help="validate only, write nothing")
     ap.add_argument("--publish", action="store_true", help=f"commit the built zip to the {DIST_BRANCH} branch")
     ap.add_argument("--push", action="store_true", help=f"with --publish: push {DIST_BRANCH} to origin")
+    ap.add_argument("--vanilla", help=f"{MC_VERSION} client jar or extracted dir with assets/minecraft/shaders")
     ap.add_argument("--repo", help="GitHub owner/name for the raw URL (default: from origin)")
     args = ap.parse_args()
 
     try:
         meta = check_mcmeta()
         files = pack_files()
-        errors = check_files(files)
+        errors = check_files(files) + check_shaders(files, args.vanilla)
         if errors:
             print("\n".join(f"error: {e}" for e in errors), file=sys.stderr)
             print(f"{len(errors)} error(s)", file=sys.stderr)

@@ -1,0 +1,487 @@
+// Piloting: boarding and getting out, the pilot's body, their keys and look,
+// the HUD.
+//
+// A mech without a pilot is parked down on one knee (gait.tc blends the legs
+// into mechKneelPose), with its roof hatch shut. Boarding (@board) is a
+// sequence, one state per mech in mBoard:
+//
+//   1  the mech kneels and opens the hatch; the player is already in their
+//      pilot body (hidden themselves, see below) where they stood
+//   2  the body is lifted in an arc to above the hatch, down through it and
+//      forward into the chair
+//   3  the hatch shuts
+//   4  the mech stands up
+//   0  piloting: W/S walk forward and back, A/D turn, look around to aim
+//      (the turret turns toward where they look, the guns tilt with their
+//      pitch), F to get out
+//
+// Getting out (F or @exit) runs it backwards: 5 the mech kneels, 6 the hatch
+// opens, 7 the body goes up out of the hatch and down in an arc to the ground
+// on the mech's left, where the player is put back on their feet. The hatch
+// then shuts and the mech stays parked.
+//
+// The pilot's body is the player's own skin on item displays (as the rally
+// driver): the head is posed every tick to look where the player looks; the
+// rest is posed in its item models (pack/src/mech_pilot.py) in the mech frame
+// at rest and only takes the torso segment's matrix. Along the boarding path
+// the whole body is moved by an offset, in its seated pose. The real player
+// rides the mech's seat entity (an interaction entity), placed so their eye
+// is at the model head's center, and is hidden: from the others with Set
+// Entity Hidden, from themselves (third person) with invisibility, and their
+// hand item draws nothing. The pack's core shader drops the model's head
+// when the camera is inside it, so first person sees the arms on the sticks.
+// Shift would dismount; that is cancelled.
+
+/** Per mech: boarding state (see above), ticks in it, and the path's other
+ * end (world: the player's eye where they boarded, or where it goes on
+ * getting out). */
+declare global mBoard: list[num];
+declare global mBoardT: list[num];
+declare global mBoardFrom: list[vec];
+/** Per mech: the pilot body's display UUIDs [head, torso, right arm, left
+ * arm, right leg, left leg], or []. */
+declare global mBody: list;
+/** Per mech: roof hatch angle (degrees, negative is open) and the angle it
+ * moves to. */
+declare global mHatch: list[num];
+declare global mHatchTo: list[num];
+
+/** Ticks of the path between the ground and the chair; the hatch's open
+ * angle and how fast it moves (degrees per tick). */
+function boardTicks(): num {
+    return 50;
+}
+
+function hatchOpen(): num {
+    return -110;
+}
+
+function hatchRate(): num {
+    return 9;
+}
+
+/** The mech player `uuid` pilots (or is boarding or leaving), or 0. */
+function mechOfPilot(uuid: str): num {
+    return global mPilot.find(uuid);
+}
+
+/** Starts boarding the nearest free mech within 30 blocks for the player
+ * (default). */
+function boardNearest {
+    if (mechOfPilot(default.uuid) != 0) {
+        default.sendMessage(s"<gray>You are already in a mech. <yellow>F</yellow> gets out.");
+        return;
+    }
+    loadGait();
+    line me = default.location;
+    line best = 0;
+    line bestD = 30;
+    repeat (line m to global mechCount) {
+        if (global mGone[line m] == 0 && global mPilot[line m] == "" && global mBoard[line m] == 0) {
+            line p = global mPos[line m];
+            line d = (vec(me.x, p.y, me.z) - line p).len();
+            if (line d < line bestD) {
+                line best = line m;
+                line bestD = line d;
+            }
+        }
+    }
+    if (line best == 0) {
+        default.sendMessage(s"<gray>No free mech within 30 blocks. <yellow>@mech</yellow> spawns one.");
+        return;
+    }
+    line m = line best;
+    global mPilot[line m] = default.uuid;
+    global gFollow[line m] = "";
+    global gWantSpeed[line m] = 0;
+    global gWantTurn[line m] = 0;
+    line eye = default.eyeLocation;
+    global mBoardFrom[line m] = vec(line eye.x, line eye.y, line eye.z);
+    global mBoard[line m] = 1;
+    global mBoardT[line m] = 0;
+    global gWalking[line m] = 1;
+    pilotBodySpawn(line m);
+    select entitiesByName(global mSeat[line m]);
+    selectedEntity.teleport(loc(line eye.x, line eye.y - 1.03, line eye.z));
+    select reset;
+    default.rideEntity(global mSeat[line m]);
+    ensureMechLoop();
+}
+
+/** Starts getting the player (default) out of their mech (once they pilot it). */
+function exitMech {
+    line m = mechOfPilot(default.uuid);
+    if (line m != 0 && global mBoard[line m] == 0) {
+        global mBoard[line m] = 5;
+        global mBoardT[line m] = 0;
+        global gWantSpeed[line m] = 0;
+        global gWantTurn[line m] = 0;
+        global gWalking[line m] = 1;
+        ensureMechLoop();
+    }
+}
+
+/** Takes the pilot out of mech m at once (if it has one), puts them on the
+ * ground on its left and parks the mech. */
+function pilotOut(m: num) {
+    if (global mBoard.len() < m) {
+        return;
+    }
+    line pilot = global mPilot[m];
+    if (line pilot == "") {
+        return;
+    }
+    pilotRelease(m);
+    line p = pilotGroundSpot(m);
+    select playersByName(line pilot);
+    selected.teleport(loc(line p.x, line p.y, line p.z), keepRot="True");
+    select reset;
+}
+
+/** Ends piloting mech m: removes the pilot body, shows the player again,
+ * gets them off the seat, and leaves the mech to park (kneel, hatch shut). */
+function pilotRelease(m: num) {
+    line pilot = global mPilot[m];
+    pilotBodyRemove(m);
+    global mPilot[m] = "";
+    global mBoard[m] = 0;
+    global mBoardT[m] = 0;
+    global mHatchTo[m] = 0;
+    global gWantSpeed[m] = 0;
+    global gWantTurn[m] = 0;
+    global gWalking[m] = 1;
+    // (Selects nobody when the player has left.)
+    select playersByName(line pilot);
+    selected.rideEntity();
+    selected.removePotionEffect(pot("Invisibility"));
+    selected.setItemInSlot(item("air"), 1);
+    select reset;
+}
+
+/** Where a pilot getting out of mech m is put down: on the ground, on the
+ * mech's left. */
+function pilotGroundSpot(m: num): vec {
+    line yaw = global mYaw[m];
+    return global mPos[m] + vec(num.cos(yaw), 0, num.sin(yaw)) * (4 * mechScale() / 2.1) + vec(0, 0.2, 0);
+}
+
+/** Spawns the body of mech m's pilot and hides the real player. */
+function pilotBodySpawn(m: num) {
+    pilotBodyRemove(m);
+    loadPilotPose();
+    line uuid = global mPilot[m];
+    line head = item("player_head").setHeadTexture(line uuid);
+    line o = global mPos[m];
+    line at = loc(line o.x, line o.y, line o.z);
+    line specs = ["mech:pilot/unit 1"];
+    for (line s of pilotRigidParts()) {
+        line specs.append(line s);
+    }
+    line ids = [];
+    for (line s of line specs) {
+        line p = (line s as str).split(" ");
+        game.spawnItemDisplay(line at, line head.setModel(line p[1] as str));
+        lastEntity.setDisplayTeleportDuration(1);
+        lastEntity.setDisplayBrightness(num.parse(line p[2] as str), 0);
+        line ids.append(lastEntity.uuid);
+    }
+    global mBody[m] = line ids;
+    pilotHide(line uuid, 1);
+    select playersByName(line uuid);
+    selected.givePotionEffect(pot("Invisibility", 1, 1000000), showIcon="False", particles="None");
+    selected.setItemInSlot(item("paper").setModel("mech:empty").setName(s"<gray>Mech controls"), 1);
+    selected.setHotbarSlot(1);
+    select reset;
+}
+
+/** Removes the body of mech m's pilot and shows the real player again. */
+function pilotBodyRemove(m: num) {
+    line ids = global mBody[m] as list;
+    if (line ids.len() == 0) {
+        return;
+    }
+    removeDisplays(line ids);
+    global mBody[m] = [];
+    pilotHide(global mPilot[m], 0);
+}
+
+/** Hides (1) or shows (0) player `uuid` to every other player. */
+function pilotHide(uuid: str, hide: num) {
+    if (uuid == "") {
+        return;
+    }
+    select !playersByName(uuid);
+    if (hide == 1) {
+        selected.setEntityHidden([uuid], hidden="Enable");
+    } else {
+        selected.setEntityHidden([uuid], hidden="Disable");
+    }
+    select reset;
+}
+
+/** Hides every pilot in a mech from the player (default) who just joined. */
+function pilotHideAllFrom {
+    repeat (line m to global mechCount) {
+        if ((global mBody[line m] as list).len() > 0) {
+            default.setEntityHidden([global mPilot[line m]], hidden="Enable");
+        }
+    }
+}
+
+/** One tick of mech m's boarding sequence (gait.tc, before the walk): moves
+ * it on from state to state. Returns 1 while the mech should be parked
+ * (kneeling): from boarding until the hatch is shut, and when getting out. */
+function pilotBoardTick(m: num): num {
+    line state = global mBoard[m];
+    if (line state == 0) {
+        return 0;
+    }
+    select playersByName(global mPilot[m]);
+    line here = game.selectionSize;
+    select reset;
+    if (line here == 0) {
+        // the player left halfway
+        pilotRelease(m);
+        return 1;
+    }
+    global mBoardT[m] += 1;
+    line t = global mBoardT[m];
+    line kneeled = global gKneel[m] >= 1;
+    line hatch = global mHatch[m];
+    line kneel = 1;
+    if (line state == 1) {
+        if (line kneeled) {
+            global mHatchTo[m] = hatchOpen();
+            if (line hatch == hatchOpen()) {
+                global mBoard[m] = 2;
+                global mBoardT[m] = 0;
+            }
+        }
+    } else if (line state == 2) {
+        if (line t >= boardTicks()) {
+            global mHatchTo[m] = 0;
+            global mBoard[m] = 3;
+            global mBoardT[m] = 0;
+        }
+    } else if (line state == 3) {
+        if (line hatch == 0) {
+            global mBoard[m] = 4;
+            global mBoardT[m] = 0;
+        }
+    } else if (line state == 4) {
+        line kneel = 0;
+        if (global gKneel[m] == 0) {
+            global mBoard[m] = 0;
+            global mBoardT[m] = 0;
+            select playersByName(global mPilot[m]);
+            selected.sendMessage(s"<gray>Piloting mech %var(m). <yellow>W/S</yellow> walk, <yellow>A/D</yellow> turn, look to aim, <yellow>F</yellow> get out.");
+            select reset;
+        }
+    } else if (line state == 5) {
+        if (line kneeled) {
+            global mHatchTo[m] = hatchOpen();
+            global mBoard[m] = 6;
+            global mBoardT[m] = 0;
+        }
+    } else if (line state == 6) {
+        if (line hatch == hatchOpen()) {
+            line g = pilotGroundSpot(m);
+            global mBoardFrom[m] = line g + vec(0, 1.62, 0);
+            global mBoard[m] = 7;
+            global mBoardT[m] = 0;
+        }
+    } else if (line state == 7) {
+        if (line t >= boardTicks()) {
+            line pilot = global mPilot[m];
+            line g = pilotGroundSpot(m);
+            pilotRelease(m);
+            select playersByName(line pilot);
+            selected.teleport(loc(line g.x, line g.y, line g.z), keepRot="True");
+            select reset;
+        }
+    }
+    if (global mBoard[m] != 0) {
+        pilotStatusBar(m);
+    }
+    return line kneel;
+}
+
+/** The pilot's action bar while boarding or getting out. */
+function pilotStatusBar(m: num) {
+    line state = global mBoard[m];
+    line text = "Boarding";
+    if (line state >= 5) {
+        line text = "Getting out";
+    }
+    line step = "kneeling";
+    if (line state == 2 || line state == 7) {
+        line step = "climbing";
+    } else if (line state == 3 || line state == 6) {
+        line step = "hatch";
+    } else if (line state == 4) {
+        line step = "standing up";
+    }
+    select playersByName(global mPilot[m]);
+    selected.sendActionBar(s"<yellow><b>%var(text)</b></yellow> <gray>%var(step)...");
+    select reset;
+}
+
+/** Smoothstep of t in [0, 1]. */
+function ease(t: num): num {
+    line c = num.clamp(t, 0, 1);
+    return line c * line c * (3 - 2 * line c);
+}
+
+/** The pilot's eye along the boarding path of mech m at u (0 at the path's
+ * far end mBoardFrom, 1 at the model's head in the chair), world. tw maps a
+ * torso-frame point to the world: [x col, y col, z col, translation]. The
+ * path: an arc to above the hatch, straight down through it into the cabin,
+ * then forward to the chair. */
+function pilotPathEye(m: num, tw: list, u: num): vec {
+    line hc = mechHatchCenter();
+    line A = rotApply(tw, line hc + vec(0, 2.2, 0)) + (tw[4] as vec);
+    line C = rotApply(tw, vec(line hc.x, global pHead.y + 0.2, line hc.z)) + (tw[4] as vec);
+    line D = rotApply(tw, global pHead) + (tw[4] as vec);
+    if (u < 0.55) {
+        line P0 = global mBoardFrom[m];
+        line Q = vec((line P0.x + line A.x) / 2, num.max(line P0.y, line A.y) + 2, (line P0.z + line A.z) / 2);
+        line s = ease(u / 0.55);
+        line a = line P0 + (line Q - line P0) * line s;
+        line b = line Q + (line A - line Q) * line s;
+        return line a + (line b - line a) * line s;
+    }
+    if (u < 0.8) {
+        return line A + (line C - line A) * ease((u - 0.55) / 0.25);
+    }
+    return line C + (line D - line C) * ease((u - 0.8) / 0.2);
+}
+
+/** Draws mech m's pilot (mechRender): the body and the seat, so the pilot's
+ * eye is at the model head's center. W: the heading's columns; T: the torso
+ * segment's transform (mech frame); o: the mech origin (world). */
+function pilotRender(m: num, W: list, T: list, o: vec) {
+    // torso frame to world
+    line tw = [rotApply(W, T[1] as vec), rotApply(W, T[2] as vec), rotApply(W, T[3] as vec), rotApply(W, T[4] as vec) + o];
+    line headRest = rotApply(line tw, global pHead) + (line tw[4] as vec);
+    // along the boarding path, the whole body moves by an offset
+    line state = global mBoard[m];
+    line off = vec(0, 0, 0);
+    if (line state == 1) {
+        line off = global mBoardFrom[m] - line headRest;
+    } else if (line state == 2) {
+        line off = pilotPathEye(m, line tw, global mBoardT[m] / boardTicks()) - line headRest;
+    } else if (line state == 7) {
+        line off = pilotPathEye(m, line tw, 1 - global mBoardT[m] / boardTicks()) - line headRest;
+    }
+    line ids = global mBody[m] as list[str];
+    select playersByName(global mPilot[m]);
+    if (game.selectionSize == 0) {
+        select reset;
+        return;
+    }
+    line eye = selected.eyeLocation;
+    select reset;
+
+    // the head looks where the player looks, within what a neck allows
+    // (torso frame)
+    line dir = line eye.getDirection();
+    line dm = vec(line dir.dot(W[1] as vec), line dir.dot(W[2] as vec), line dir.dot(W[3] as vec));
+    line dt = vec(line dm.dot(T[1] as vec), line dm.dot(T[2] as vec), line dm.dot(T[3] as vec));
+    line hf = vec(line dt.x, num.clamp(line dt.y, -0.6, 0.5), num.max(line dt.z, 0.25)).setLength(1);
+    line hl = vec(0, 1, 0).cross(line hf).setLength(1);
+    line hu = line hf.cross(line hl);
+    line px = global pPx;
+    line headC = global pNeck + line hu * (4 * line px);
+    line eyeW = rotApply(line tw, line headC) + (line tw[4] as vec) + line off;
+    select entitiesByName(global mSeat[m]);
+    selectedEntity.teleport(loc(line eyeW.x, line eyeW.y - 1.03, line eyeW.z));
+    select reset;
+    if (line ids.len() == 0) {
+        return;
+    }
+
+    // every part stands on the mech origin moved by the offset
+    select entitiesByName(line ids);
+    selectedEntity.teleport(loc(o.x + line off.x, o.y + line off.y, o.z + line off.z));
+    select reset;
+    line wt = line tw[4] as vec - o;
+    select entitiesByName([line ids[2], line ids[3], line ids[4], line ids[5], line ids[6]]);
+    line a = line tw[1] as vec;
+    line b = line tw[2] as vec;
+    line c = line tw[3] as vec;
+    selectedEntity.setDisplayTransformationMatrix([line a.x, line b.x, line c.x, line wt.x, line a.y, line b.y, line c.y, line wt.y, line a.z, line b.z, line c.z, line wt.z, 0, 0, 0, 1]);
+    selectedEntity.setDisplayInterpolation(1, 0);
+    select reset;
+    // head: an 8 x 8 x 8 px box at headC with axes (hl, hu, hf)
+    line hx = rotApply(line tw, line hl * (0 - 8 * line px));
+    line hy = rotApply(line tw, line hu * (8 * line px));
+    line hz = rotApply(line tw, line hf * (0 - 8 * line px));
+    line ht = rotApply(line tw, line headC) + line wt;
+    select entitiesByName(line ids[1]);
+    selectedEntity.setDisplayTransformationMatrix([line hx.x, line hy.x, line hz.x, line ht.x, line hx.y, line hy.y, line hz.y, line ht.y, line hx.z, line hy.z, line hz.z, line ht.z, 0, 0, 0, 1]);
+    selectedEntity.setDisplayInterpolation(1, 0);
+    select reset;
+}
+
+playerevent dismount {
+    // Shift would drop the pilot out of the cockpit; getting out is F.
+    if (mechOfPilot(default.uuid) != 0) {
+        event.cancel();
+    }
+}
+
+playerevent swapHands {
+    if (mechOfPilot(default.uuid) != 0) {
+        event.cancel();
+        exitMech();
+    }
+}
+
+playerevent leave {
+    line m = mechOfPilot(default.uuid);
+    if (line m != 0) {
+        pilotRelease(line m);
+    }
+}
+
+/** Reads mech m's pilot for this tick: sets the speed and turn rate they ask
+ * for, and returns [the yaw they look at, their pitch] (degrees), or [] if
+ * the pilot is gone. */
+function pilotInput(m: num): list {
+    select playersByName(global mPilot[m]);
+    if (game.selectionSize == 0) {
+        select reset;
+        pilotRelease(m);
+        return [];
+    }
+    line fwd = selected.steerForwardMovement;
+    line side = selected.steerSidewaysMovement;
+    line look = selected.location;
+    select reset;
+    // W/S: forward at full speed, back at half; A/D: + sideways is A, a turn
+    // to the left, which lowers the yaw
+    if (line fwd > 0) {
+        global gWantSpeed[m] = global gMaxSpeed * line fwd;
+    } else {
+        global gWantSpeed[m] = global gMaxSpeed * 0.5 * line fwd;
+    }
+    global gWantTurn[m] = 0 - global gMaxTurn * line side;
+    return [line look.getCoordinate(coord="Yaw"), line look.getCoordinate(coord="Pitch")];
+}
+
+/** The pilot's action bar: speed, heading, how far the turret lags the aim,
+ * the last landing's impact speed and plot CPU. */
+function pilotHud(m: num, aimAt: num) {
+    line kmh = num.round(num.abs(global gSpeed[m]) * 3.6);
+    line heading = num.round(num.wrap(global mYaw[m], 0, 360));
+    line lag = num.round(num.abs(wrapDeg(aimAt - global gAim[m])));
+    line impact = num.round(global gImpact[m] * 10) / 10;
+    line cpu = num.round(game.cpuUsage);
+    line state = "";
+    if (global gFalling[m] == 1) {
+        line state = "   <red><b>FALLING</b></red>";
+    }
+    select playersByName(global mPilot[m]);
+    selected.sendActionBar(s"<white><b>%var(kmh)</b></white> <gray>km/h   heading</gray> <white>%var(heading)°</white>   <gray>turret lag</gray> <white>%var(lag)°</white>   <gray>last landing</gray> <white>%var(impact) m/s</white>   <gray>CPU %var(cpu)%</gray>%var(state)");
+    select reset;
+}

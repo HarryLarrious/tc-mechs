@@ -1,6 +1,6 @@
 // Mechs: spawning, posing, drawing and removing. The pose comes from the
 // joint angles: set by hand (@pose) or each tick by the procedural walk
-// (gait.tc). No physics yet.
+// (gait.tc), parked on one knee without a pilot.
 //
 // A mech is mechPartCount() item displays, one per part (mech_data.tc). All
 // of them stand on the mech origin (on the ground midway between the hips,
@@ -21,6 +21,8 @@
 // Mech frame: +X left, +Y up, +Z forward, meters. DiamondFire spawns item
 // displays without the spawn location's yaw, so the heading goes into the
 // matrix too.
+//
+// The roof hatch ("hinge_x") turns about its hinge's X by mHatch (pilot.tc).
 
 /** Display UUIDs of each mech's parts, in mechPartData order, and the same
  * UUIDs by draw group (mGroup order). */
@@ -38,6 +40,10 @@ declare global mSpin: list[num];
  * slot stays so later mechs keep their numbers). */
 declare global mOwner: list[str];
 declare global mGone: list[num];
+/** Per mech: the UUID of the pilot's seat (an interaction entity the pilot
+ * rides, moved with the torso every tick) and of the pilot ("" for none). */
+declare global mSeat: list[str];
+declare global mPilot: list[str];
 /** Number of mechs. */
 declare global mechCount: num;
 
@@ -57,7 +63,7 @@ declare global mechLoaded: num;
 
 /** The parsed data's current version. */
 function mechDataVersion(): num {
-    return 4;
+    return 7;
 }
 
 /** Parses the generated data once. */
@@ -173,6 +179,11 @@ function mechRender(m: num, dur: num = 0) {
     select entitiesByName(global mAll[m] as list[str]);
     selectedEntity.teleport(loc(line o.x, line o.y + global gBodyY[m], line o.z));
     select reset;
+    // the pilot's body and seat ride with the torso (pilot.tc)
+    if (global mPilot[m] != "") {
+        pilotRender(m, line W, line segs[(global gSegs[7] as num)] as list, vec(line o.x, line o.y + global gBodyY[m], line o.z));
+    }
+    line hatch = global mHatch[m];
     line gids = global mGroupIds[m] as list;
     repeat (line i to global mGroup.len()) {
         line p = global mGroup[line i] as list;
@@ -195,6 +206,13 @@ function mechRender(m: num, dur: num = 0) {
             line sx = line cx * line c + line cy * line sn;
             line cy = line cy * line c - line cx * line sn;
             line cx = line sx;
+        } else if (line p[2] as str == "hinge_x") {
+            // the roof hatch: about its own X on its hinge
+            line c = num.cos(line hatch);
+            line sn = num.sin(line hatch);
+            line hy = line cy * line c + line cz * line sn;
+            line cz = line cz * line c - line cy * line sn;
+            line cy = line hy;
         }
         line wx = rotApply(line W, line cx);
         line wy = rotApply(line W, line cy);
@@ -248,6 +266,15 @@ function spawnMech(at: loc, paint: num, accent: num): num {
     global mSpin.append(0);
     global mOwner.append(default.uuid);
     global mGone.append(0);
+    game.spawnInteractionEntity(line origin, 0.01, 0.01);
+    global mSeat.append(lastEntity.uuid);
+    global mPilot.append("");
+    global mBoard.append(0);
+    global mBoardT.append(0);
+    global mBoardFrom.append(vec(0, 0, 0));
+    global mBody.append([]);
+    global mHatch.append(0);
+    global mHatchTo.append(0);
     gaitInit(global mechCount);
     mechRender(global mechCount);
     ensureMechLoop();
@@ -283,7 +310,11 @@ function removeMech(m: num) {
     if (global mGone[m] == 1) {
         return;
     }
+    pilotOut(m);
     removeDisplays(global mAll[m] as list);
+    select entitiesByName(global mSeat[m]);
+    selectedEntity.remove();
+    select reset;
     global mAll[m] = [];
     global mGroupIds[m] = [];
     global mGone[m] = 1;
@@ -303,6 +334,14 @@ function clearMechs {
     global mSpin = [];
     global mOwner = [];
     global mGone = [];
+    global mSeat = [];
+    global mPilot = [];
+    global mBoard = [];
+    global mBoardT = [];
+    global mBoardFrom = [];
+    global mBody = [];
+    global mHatch = [];
+    global mHatchTo = [];
     global mechCount = 0;
 }
 

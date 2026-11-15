@@ -28,9 +28,10 @@
   "max_turn": 40.0,
   "turn_accel": 80.0,
   "aim_rate": 30.0,
+  "pilot_aim_rate": 60.0,
   "toe": 12.0,
-  "max_rise": 1.197,
-  "probe_up": 2.52,
+  "max_rise": 3.192,
+  "probe_up": 3.696,
   "probe_down": 3.15,
   "climb_rate": 2.1,
   "foot_heel": -0.609,
@@ -38,7 +39,22 @@
   "foot_toe": 1.995,
   "foot_side": 0.504,
   "margin": 1.0,
-  "max_reach": 0.97
+  "max_reach": 0.97,
+  "gravity": 15.0,
+  "max_fall": 40.0,
+  "land_dip": 0.315,
+  "dip_rate": 1.05,
+  "fall_drift": 4.2,
+  "kneel_drop": 3.2991,
+  "kneel_time": 1.5
+ },
+ "kneel_pose": {
+  "hip_l": 41.0,
+  "knee_l": 47.0,
+  "ankle_l": -1.0,
+  "hip_r": -102.0,
+  "knee_r": 64.0,
+  "ankle_r": 38.0
  },
  "probes": [
   [
@@ -259,7 +275,7 @@
    "parent": "pelvis",
    "child": "thigh_l",
    "range": [
-    -45,
+    -105,
     42
    ],
    "label": "Hip L"
@@ -274,8 +290,8 @@
    "parent": "thigh_l",
    "child": "shin_l",
    "range": [
-    -45,
-    45
+    -75,
+    75
    ],
    "label": "Knee L"
   },
@@ -304,7 +320,7 @@
    "parent": "pelvis",
    "child": "thigh_r",
    "range": [
-    -45,
+    -105,
     42
    ],
    "label": "Hip R"
@@ -319,8 +335,8 @@
    "parent": "thigh_r",
    "child": "shin_r",
    "range": [
-    -45,
-    45
+    -75,
+    75
    ],
    "label": "Knee R"
   },
@@ -418,7 +434,8 @@
  "anims": {
   "fixed": "rigid with its segment",
   "aim": "at its pivot on its segment, local +Y aimed at links.to on links.to_segment (pistons)",
-  "spin_z": "rigid with its segment, then turned about its own local Z (heavy gun barrels)"
+  "spin_z": "rigid with its segment, then turned about its own local Z (heavy gun barrels)",
+  "hinge_x": "rigid with its segment, then turned about its own local X at its pivot (the roof hatch; negative opens it)"
  },
  "tints": {
   "0": "armor paint",
@@ -429,7 +446,7 @@
   "#e0761c"
  ],
  "damage_state": "custom_model_data string 0 = \"damaged\" swaps to the _damaged model",
- "total_mass": 6446.2,
+ "total_mass": 6466.2,
  "parts": [
   {
    "id": "pelvis",
@@ -2313,7 +2330,7 @@
     ]
    ],
    "links": {},
-   "elements": 30
+   "elements": 33
   },
   {
    "id": "torso_front",
@@ -2386,12 +2403,51 @@
     ],
     [
      1.794,
-     1.134,
+     1.018,
      1.323
     ]
    ],
    "links": {},
-   "elements": 20
+   "elements": 14
+  },
+  {
+   "id": "hatch",
+   "label": "Roof hatch (hinged lid over the cabin)",
+   "group": "armor",
+   "parent": "torso_top",
+   "segment": "torso",
+   "item_model": "mech:torso/hatch",
+   "pivot": [
+    0.0,
+    10.248,
+    -1.89
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "hinge_x",
+   "mass": 20,
+   "hp": 120,
+   "on_break": "detach",
+   "effect": "Torn off: the cabin is open to the sky",
+   "shield": [],
+   "damaged_model": true,
+   "hitbox": [
+    [
+     -0.441,
+     -0.084,
+     -0.036
+    ],
+    [
+     0.441,
+     0.126,
+     0.903
+    ]
+   ],
+   "links": {},
+   "elements": 10
   },
   {
    "id": "torso_side_l",

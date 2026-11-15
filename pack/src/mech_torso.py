@@ -19,7 +19,9 @@ Segments and joints added here:
                               --elev_ll/elev_lr (X)--> lgun_l / lgun_r
 
 Negative elevation raises the muzzle (it is a turn about X, and the guns point
-+Z). The heavy barrel cluster spins about its own Z axis ("spin_z" anim).
++Z). The heavy barrel cluster spins about its own Z axis ("spin_z" anim). The
+roof hatch turns about its own X axis at its rear hinge ("hinge_x" anim;
+negative opens it).
 """
 
 from __future__ import annotations
@@ -47,8 +49,19 @@ VIEW_Y = (FLOOR_Y + 0.92 / MECH_SCALE, FLOOR_Y + 1.34 / MECH_SCALE)  # viewport 
 SEAT = (0.0, FLOOR_Y + SEAT_TOP / MECH_SCALE, 0.66 - 1.15 / MECH_SCALE)  # seat top center (design units)
 _r = math.radians(RECLINE)
 HIPS_Z = -0.11                        # the pilot's hips, real meters behind the seat's center
+STICK_X, STICK_Z = 0.33, 0.15         # joysticks: out to each side and ahead of the seat's center (real m)
+GRIP_UP = 0.415                       # grip center above the seat top (real m)
+
+
+def pilot_grips():
+    """The joystick grips' centers (design units, mech frame): [left, right]."""
+    out = []
+    for s in (1, -1):
+        out.append((s * STICK_X / MECH_SCALE, SEAT[1] + GRIP_UP / MECH_SCALE, SEAT[2] + (STICK_Z + 0.0275) / MECH_SCALE))
+    return out
 EYE = (0.0, SEAT[1] + 1.03 * math.cos(_r) / MECH_SCALE,
        SEAT[2] + (HIPS_Z - 1.03 * math.sin(_r)) / MECH_SCALE)                       # pilot's eyes (design units)
+ROOF_Y = 4.88                         # top of the roof plates
 HATCH_Z = -0.68                       # roof hatch, over the ladder
 H_RANGE = [-35, 12]                   # elevation, degrees (negative = muzzle up)
 L_RANGE = [-35, 8]
@@ -84,7 +97,7 @@ def _frame():
     # The hull is a hollow cabin: floor, walls and ceiling are plates whose
     # inner faces show from inside. The front wall has the viewport opening.
     e.append(box((-0.80, 4.03, -0.95), (0.80, 4.07, 0.70), "gunmetal"))              # floor
-    e.append(box((-0.80, 4.76, -0.95), (0.80, 4.80, 0.70), "gunmetal"))              # ceiling
+    e += _with_hatch_hole(-0.80, 0.80, 4.76, 4.80, -0.95, 0.70, "gunmetal")          # ceiling
     for s in (1, -1):
         x0, x1 = sorted((s * 0.76, s * 0.80))
         e.append(box((x0, 4.07, -0.95), (x1, 4.76, 0.70), "gunmetal"))               # side walls
@@ -139,14 +152,40 @@ def _glacis_z(y):
     return 0.70 + (0.98 - 0.70) * (y - 4.05) / (y0 - 4.05)
 
 
+HATCH_HALF = 0.22                     # the hatch is a square this far either side of its center
+
+
+def _with_hatch_hole(x0, x1, y0, y1, z0, z1, mat):
+    """A flat slab with a square hole where the hatch is."""
+    hz, h = HATCH_Z, HATCH_HALF
+    return [box((x0, y0, hz + h), (x1, y1, z1), mat),           # in front of the hole
+            box((x0, y0, z0), (x1, y1, hz - h), mat),           # behind it
+            box((x0, y0, hz - h), (-h, y1, hz + h), mat),       # to its right
+            box((h, y0, hz - h), (x1, y1, hz + h), mat)]        # to its left
+
+
+def _hatch():
+    """The roof hatch, a square armored lid over the cabin, hinged at its rear
+    edge (the part's pivot); it opens by turning about X."""
+    hz, h = HATCH_Z, HATCH_HALF
+    e = [box((-h + 0.01, 4.86, hz - h + 0.01), (h - 0.01, 4.90, hz + h - 0.01), "armor"),   # lid
+         box((-h + 0.05, 4.90, hz - h + 0.05), (h - 0.05, 4.91, hz + h - 0.05), "accent"),  # raised panel
+         box((-0.08, 4.91, hz + 0.02), (0.08, 4.94, hz + 0.06), "steel"),                     # handle
+         box((-h + 0.03, 4.84, hz - h + 0.03), (h - 0.03, 4.86, hz + h - 0.03), "darksteel")]  # underside
+    for x in (-0.15, 0.15):
+        e += prism((x, 4.88, hz - h), "x", 0.02, 0.08, 6, "steel")                          # hinge knuckles
+    return e
+
+
 def _top():
-    e = [box((-0.78, 4.80, -0.95), (0.78, 4.86, 0.62), "armor"),                    # roof
+    e = _with_hatch_hole(-0.78, 0.78, 4.80, 4.86, -0.95, 0.62, "armor")              # roof (hatch hole)
+    e += [
          box((-0.70, 4.86, -0.90), (-0.28, 4.88, -0.20), "armor"),                   # raised panels
          box((0.28, 4.86, -0.90), (0.70, 4.88, -0.20), "armor")]
-    hz = HATCH_Z
-    e += prism((0.0, 4.875, hz), "y", 0.25, 0.03, 12, "hazard")                      # hatch ring
-    e += prism((0.0, 4.895, hz), "y", 0.21, 0.03, 12, "armor")                       # hatch
-    e.append(box((-0.08, 4.91, hz - 0.02), (0.08, 4.94, hz + 0.02), "steel"))       # handle
+    hz, h = HATCH_Z, HATCH_HALF
+    for a, b in (((-h - 0.05, hz + h), (h + 0.05, hz + h + 0.05)), ((-h - 0.05, hz - h - 0.05), (h + 0.05, hz - h)),
+                 ((-h - 0.05, hz - h), (-h, hz + h)), ((h, hz - h), (h + 0.05, hz + h))):
+        e.append(box((a[0], 4.86, a[1]), (b[0], 4.875, b[1]), "hazard"))           # hatch rim
     for s in (1, -1):
         e.append(plate((s * 0.80, 4.81, -0.16), (0.10, 0.05, 1.58), "armor", (0.0, 0.0, s * 40.0)))  # edge chamfer
         e.append(box((s * 0.41 - 0.02, 4.88, -0.88), (s * 0.41 + 0.02, 4.885, -0.24), "accent"))
@@ -232,7 +271,7 @@ def _cockpit():
         y, z = back(0.30, 0.02)
         e.append(L((s * 0.27, y, z), (0.06, 0.60, 0.14), "seat", rec))                  # side bolster
         # joystick at the front of the armrest
-        jx, jz = s * 0.33, 0.15
+        jx, jz = s * STICK_X, STICK_Z
         e += prism(P(jx, st + 0.20, jz), "y", 0.04 / k, 0.04 / k, 8, "darksteel")          # boot
         e.append(M((jx, st + 0.20, jz), (jx, st + 0.36, jz + 0.03), 0.025, 0.025, "steel"))  # stick
         e.append(B((jx - 0.025, st + 0.36, jz - 0.005), (jx + 0.025, st + 0.47, jz + 0.06), "accent"))  # grip
@@ -369,6 +408,9 @@ def torso_parts():
     _part(torso, Part("torso_top", "Torso roof armor (hatch)", "armor", "torso_frame", "torso", PIVOT,
                       140, 300, "detach", "Torn off: the hull core and light gun mounts take hits from above"),
           _top(), PIVOT)
+    hinge = (0.0, 4.88, HATCH_Z - HATCH_HALF)
+    _part(torso, Part("hatch", "Roof hatch (hinged lid over the cabin)", "armor", "torso_top", "torso", hinge,
+                      20, 120, "detach", "Torn off: the cabin is open to the sky", anim="hinge_x"), _hatch(), hinge)
     left = Part("torso_side_l", "Torso side armor (left)", "armor", "torso_frame", "torso", PIVOT,
                 120, 320, "detach", "Torn off: the hull and the heavy gun's hardpoint take side hits directly")
     _part(torso, left, _side_l(), PIVOT)

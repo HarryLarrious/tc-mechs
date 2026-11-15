@@ -54,10 +54,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from mech_lib import (MATERIALS, MODEL_SCALE, NS, ROOT, TINTS, Elem, Part, beam, box, hitbox,  # noqa: E402
-                      MECH_SCALE, PROBES, gait_scaled, mirror_x, no_dent, plate, prism, ring_x, scale_part, to_local,
+                      KNEEL_POSE, MECH_SCALE, PROBES, gait_scaled, mirror_x, no_dent, plate, prism, ring_x, scale_part, to_local,
                       write_models, write_textures)
 from mech_pelvis import pelvis_parts  # noqa: E402
-from mech_torso import EYE as PILOT_EYE, RECLINE, SEAT, torso_parts  # noqa: E402
+from mech_torso import EYE as PILOT_EYE, HATCH_Z, HIPS_Z, RECLINE, ROOF_Y, SEAT, pilot_grips, torso_parts  # noqa: E402
+from mech_pilot import write_pilot  # noqa: E402
 
 HIP_X = 0.75      # hip joint offset from the centerline (mech frame, before MECH_SCALE)
 SIDES = {"l": (1, "left"), "r": (-1, "right")}
@@ -125,6 +126,8 @@ PISTONS = {
     "knee":  ((th(0.45, 0.21, 0.30), "thigh"), (sh(0.48, 0.26, 0.30), "shin")),
     "ankle": ((sh(0.40, -0.20), "shin"), ((0.0, 0.95, -0.62), "foot")),
 }
+JOINT_CAP = {"hip": 105, "knee": 75, "ankle": 75}  # leg joints never turn further than this (degrees),
+                                                   # even where the pistons would (the hip to 105 for the kneel)
 BARREL = 0.6      # barrel length / rest length
 ROD = 0.6         # rod length / rest length
 EYE = 0.14        # from the cylinder's eye to the bottom of its bore
@@ -512,9 +515,9 @@ def joint_ranges():
     for j, (_, _, child) in JOINTS.items():
         names = [n for n, ((_, sa), (_, sb)) in PISTONS.items() if {sa, sb} == {JOINTS[j][1], JOINTS[j][2]}]
         lo = hi = 0
-        while lo > -45 and all(piston_ok(n, {j: lo - 1}) for n in names):
+        while lo > -JOINT_CAP[j] and all(piston_ok(n, {j: lo - 1}) for n in names):
             lo -= 1
-        while hi < 45 and all(piston_ok(n, {j: hi + 1}) for n in names):
+        while hi < JOINT_CAP[j] and all(piston_ok(n, {j: hi + 1}) for n in names):
             hi += 1
         out[j] = [lo, hi]
     return out
@@ -640,6 +643,17 @@ def write_tc_data(spec) -> None:
         "function mechProbes(): list {\n    return [\n        "
         + ",\n        ".join(f'"{f} {tc_num(x)} {tc_num(y)} {tc_num(z)}"' for f, x, y, z in spec["probes"])
         + "\n    ];\n}\n\n"
+        "/** The parked kneel (degrees per leg joint): down on the left knee. */\n"
+        "function mechKneelPose(): dict {\n    return {"
+        + ", ".join(f"{k_}: {tc_num(v)}" for k_, v in spec["kneel_pose"].items()) + "};\n}\n\n"
+        "/** The roof hatch's center, on top of the roof, in the mech frame at rest (m):\n"
+        " * boarding drops the pilot in through it. */\n"
+        "function mechHatchCenter(): vec {\n    return vec(0, "
+        + tc_num(ROOF_Y * MECH_SCALE) + ", " + tc_num(HATCH_Z * MECH_SCALE) + ");\n}\n\n"
+        "/** The pilot's seat: the top center of the chair's seat in the mech frame\n"
+        " * at rest (it turns with the torso). A rider's eyes are 1.03 m above it. */\n"
+        "function mechCockpitSeat(): vec {\n    return vec("
+        + ", ".join(tc_num(v) for v in spec["cockpit_seat"]) + ");\n}\n\n"
         "/** Default armor paint and accent colors. */\n"
         "function mechDefaultColors(): list {\n    return ["
         + ", ".join(f"0x{c[1:].upper()}" for c in spec["tint_defaults"]) + "];\n}\n"
@@ -704,13 +718,16 @@ def main():
         "cockpit_eye": [round(c * MECH_SCALE, 4) for c in PILOT_EYE],
         "cockpit_recline": RECLINE,
         "gait": gait_scaled(),
+        "kneel_pose": KNEEL_POSE,
         "probes": [[f, round(x * MECH_SCALE, 4), round(y * MECH_SCALE, 4), round(z * MECH_SCALE, 4)]
                    for f, x, y, z in PROBES],
         "segments": segments,
         "joints": joints,
         "anims": {"fixed": "rigid with its segment",
                   "aim": "at its pivot on its segment, local +Y aimed at links.to on links.to_segment (pistons)",
-                  "spin_z": "rigid with its segment, then turned about its own local Z (heavy gun barrels)"},
+                  "spin_z": "rigid with its segment, then turned about its own local Z (heavy gun barrels)",
+                  "hinge_x": "rigid with its segment, then turned about its own local X at its pivot (the "
+                             "roof hatch; negative opens it)"},
         "tints": {"0": "armor paint", "1": "accent (stripes, trims, air tanks)"},
         "tint_defaults": ["#%06x" % t["default"] for t in TINTS],
         "damage_state": "custom_model_data string 0 = \"damaged\" swaps to the _damaged model",
@@ -729,6 +746,8 @@ def main():
     (ROOT / "mech/parts.json").write_text(json.dumps(spec, indent=1) + "\n")
     write_table(spec)
     write_tc_data(spec)
+    write_pilot(tuple(c * MECH_SCALE for c in SEAT), RECLINE, HIPS_Z,
+                [tuple(c * MECH_SCALE for c in g) for g in pilot_grips()])
     viewer = ROOT / "tools/viewer"
     viewer.mkdir(parents=True, exist_ok=True)
     (viewer / "mech_data.js").write_text("// Generated by pack/src/mech_parts.py. Do not edit.\nwindow.MECH = "

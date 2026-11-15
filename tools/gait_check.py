@@ -27,11 +27,20 @@ mech/parts.json here).
     lifting higher for a step up or down.
   * Body: it moves and turns at the commanded speed and turn rate, unless the
     move would put a collision probe in a solid block (it slides along the
-    wall if one axis is free) or stretch a planted leg out of reach (it waits
-    for the feet). Its height follows the feet's average; it is crouched a
-    little and rises at mid-swing.
+    wall if one axis is free) or put a planted leg out of reach or past a
+    joint limit when it is inside them now (it waits for the feet; a leg
+    already out of reach never stops a move that helps it). Its height
+    follows the feet (a swinging foot by where it will land) by the same
+    rules; it is crouched a little and rises at mid-swing.
   * Torso: it turns toward its aim at aim_rate, unless that would put its
     probes (the hull and the heavy guns) in a block.
+  * Gravity: each tick a planted foot checks the block top under it. A foot
+    whose ground is gone (or has a block grown into it) steps at once; with
+    no step to take, or both feet gone, the mech falls (gravity, capped at
+    max_fall) with its legs held, lands when a foot meets a block top, and
+    sinks land_dip into its legs on a hard landing. Walking toward a drop
+    deeper than max_rise, a foot steps out over it and the mech falls; every
+    landing records its impact speed, for the damage model.
 
 Checks: the IK puts the ankle exactly where it was asked; a walk at every
 speed and turn rate on flat ground keeps every joint in range and every
@@ -64,9 +73,16 @@ STEP, SETTLE, LEAD = G["step"], G["settle"], G["lead"]
 MAX_SPEED, MAX_TURN, TOE = G["max_speed"], G["max_turn"], G["toe"]
 MAX_RISE, UP, DOWN, CLIMB = G["max_rise"], G["probe_up"], G["probe_down"], G["climb_rate"]
 MARGIN, MAX_REACH = G["margin"], G["max_reach"]
-# Landing spots tried, as shares of the planned step: the plan, a longer step
-# (to get a whole foot onto a step instead of perching on its edge), shorter ones.
-STEP_FRACTIONS = (1.0, 1.3, 0.7, 0.45, 0.2)
+GRAVITY, MAX_FALL, LAND_DIP, DIP_RATE = G["gravity"], G["max_fall"], G["land_dip"], G["dip_rate"]
+FALL_DRIFT = G["fall_drift"]
+# Body heights a landing is judged at, as shares from the lower foot to the
+# higher: halfway first, then lower and higher (a tall step needs the body
+# near one end).
+BODY_MIXES = (0.5, 0.25, 0.75, 0.0, 1.0)
+# Landing spots tried, as shares of the planned step: the plan, longer steps
+# (to get a whole foot onto a step instead of perching on its edge, and to
+# bring the trailing foot up a tall step the body is waiting at), shorter ones.
+STEP_FRACTIONS = (1.0, 1.3, 1.6, 2.0, 0.7, 0.45, 0.2)
 FOOT_SAMPLES = [(0.0, G["foot_heel"]), (0.0, G["foot_mid"]), (0.0, G["foot_toe"]),
                 (G["foot_side"], G["foot_mid"]), (-G["foot_side"], G["foot_mid"])]
 
@@ -166,21 +182,32 @@ def left(yaw):
 class Walker:
     """The gait state of one mech."""
 
-    def __init__(self, world, x=0.0, z=0.0, yaw=0.0):
+    def __init__(self, world, x=0.0, z=0.0, yaw=0.0, y=0.0):
         self.world = world
-        self.pos = [x, 0.0, z]           # x, ground level, z
+        self.pos = [x, y, z]             # x, ground level, z
         self.yaw = yaw
         self.aim = yaw                   # where the torso faces
         self.speed = self.want_speed = 0.0
         self.turn = self.want_turn = 0.0
         self.body_y = -CROUCH
+        self.vy = 0.0                    # falling speed (m/s, negative down)
+        self.falling = False
+        self.dip = 0.0                   # how far the body has sunk after a landing
         self.feet = {}
         for s in ("l", "r"):
             h = self.home(s, 0.0)
-            self.feet[s] = [h[0], self.ground(h[0], h[1], yaw, 0.0) or 0.0, h[1]]
-        self.pos[1] = (self.feet["l"][1] + self.feet["r"][1]) / 2
+            g = self.ground(h[0], h[1], yaw, y, stand=False)
+            if g is None:                # nothing under it: it falls
+                self.falling = True
+            self.feet[s] = [h[0], y if g is None else g, h[1]]
+        if not self.falling:
+            self.pos[1] = (self.feet["l"][1] + self.feet["r"][1]) / 2
         self.swing = {"l": None, "r": None}   # (t, start, end) while swinging
         self.blocked = 0
+        self.falls = 0
+        self.forced = 0
+        self.stepped_off = 0
+        self.impacts = []                # landing speeds (m/s), for the damage model
 
     def home(self, side, lead, x=None, z=None, yaw=None):
         """Where a foot (ankle x, z) rests under its hip, `lead` meters ahead."""
@@ -217,6 +244,16 @@ class Walker:
         my = ANKLE[1] + foot[1] - gy - (-CROUCH)
         return leg_ok(my - HIP[1], mz - HIP[2])
 
+    def legs_allow(self, x, z, yaw, gy):
+        """Whether the body may stand at (x, gy, z) facing yaw: no planted leg
+        that suits the body now would stop suiting it there (a leg that is
+        already out of reach may stay so, so the body can move to fix it)."""
+        for s in ("l", "r"):
+            if self.swing[s] is None and not self.foot_ok(self.feet[s], x, z, yaw, gy) and \
+                    self.foot_ok(self.feet[s], self.pos[0], self.pos[2], self.yaw, self.pos[1]):
+                return False
+        return True
+
     def path_clear(self, a, b, yaw):
         """Whether a swing from a to b passes over nothing higher than both ends:
         the ground along the foot's sweep, from its heel at the start to its toe
@@ -243,10 +280,142 @@ class Walker:
                 return False
         return True
 
+    def plan_step(self, s, lead, lx, lz, lyaw, may_step_off=True):
+        """Starts a swing of foot s to the first good landing spot near its home
+        spot for a body landing at (lx, lz) facing lyaw. If there is none
+        because the planned spot is a drop deeper than MAX_RISE (or has no
+        ground at all), the foot steps out level over it, and the mech falls
+        once it is there (unless may_step_off is False). False if neither."""
+        o = "r" if s == "l" else "l"
+        tx, tz = self.home(s, lead, lx, lz, lyaw)
+        a = self.feet[s]
+        for frac in STEP_FRACTIONS:
+            ex, ez = a[0] + (tx - a[0]) * frac, a[2] + (tz - a[2]) * frac
+            ey = self.ground(ex, ez, lyaw, a[1])
+            if ey is None or abs(ey - self.feet[o][1]) > MAX_RISE:
+                continue
+            if not self.path_clear(a, (ex, ey, ez), lyaw):
+                continue
+            # the body moves toward the feet's heights while the foot swings;
+            # the landing must suit some body height between them
+            oy = self.feet[o][1]
+            lo_, hi_ = min(ey, oy), max(ey, oy)
+            if any(self.foot_ok((ex, ey, ez), lx, lz, lyaw, lo_ + (hi_ - lo_) * k_) for k_ in BODY_MIXES):
+                self.swing[s] = (0.0, list(a), [ex, ey, ez])
+                return True
+        if may_step_off:
+            g = self.ground(tx, tz, lyaw, a[1], stand=False)
+            if g is None or g < a[1] - MAX_RISE:
+                end = (tx, a[1], tz)
+                if self.path_clear(a, end, lyaw) and self.foot_ok(end, lx, lz, lyaw, self.pos[1]):
+                    self.swing[s] = (0.0, list(a), list(end))
+                    self.stepped_off += 1
+                    return True
+        return False
+
+    def supported(self, s):
+        """Whether foot s still has its ground: the block top under it is where
+        it stands (not gone, not lower, not a block grown into it)."""
+        f = self.feet[s]
+        g = self.ground(f[0], f[2], self.yaw, f[1], stand=False)
+        return g is not None and abs(g - f[1]) <= 0.05
+
+    def fall_clear(self, x, z, d):
+        """Whether the mech, moved to (x, z) and dropped by d, has no probe and
+        no foot (its ankle point and middle) inside a block."""
+        if not self.probes_clear(x, z, self.yaw, self.aim, self.pos[1] + d, self.body_y):
+            return False
+        f = fwd(self.yaw)
+        for s in ("l", "r"):
+            ft = self.feet[s]
+            for along in (0.0, G["foot_mid"]):
+                if self.world.solid(ft[0] + x - self.pos[0] + f[0] * along, ft[1] + d + 0.05,
+                                    ft[2] + z - self.pos[2] + f[1] * along):
+                    return False
+        return True
+
+    def fall(self, dt):
+        """One tick of falling: everything drops together, the feet swinging to
+        hang under the hips (off any edge they stood on), until a foot meets a
+        block top below it; then it lands with its legs as they were, records
+        the impact speed and sinks a little."""
+        self.vy = max(self.vy - GRAVITY * dt, -MAX_FALL)
+        dy = self.vy * dt
+        for s in ("l", "r"):
+            f = self.feet[s]
+            hx, hz = self.home(s, 0.0)
+            ddx, ddz = hx - f[0], hz - f[2]
+            dd = math.hypot(ddx, ddz)
+            step = FALL_DRIFT * dt
+            if dd > step:
+                ddx, ddz = ddx * step / dd, ddz * step / dd
+            f[0] += ddx
+            f[2] += ddz
+        land = None
+        for s in ("l", "r"):
+            f = self.feet[s]
+            g = self.ground(f[0], f[2], self.yaw, f[1], stand=False)
+            # only ground below the foot counts (a foot still on an edge does not hold the mech up)
+            if g is not None and g < f[1] - 0.001 and g >= f[1] + dy:
+                land = g - f[1] if land is None else max(land, g - f[1])
+        d = dy if land is None else land
+        # the mech falls clear of whatever it would drop into: its probes, and
+        # its feet (a foot still standing on an edge slides off it). It is
+        # pushed away (forward first, then back, then sideways) up to 3 m; if
+        # nothing clears, it comes to rest where it is
+        if not self.fall_clear(self.pos[0], self.pos[2], d):
+            f, l = fwd(self.yaw), left(self.yaw)
+            moved = False
+            for r in (0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0):
+                for vx, vz in ((f[0], f[1]), (-f[0], -f[1]), (l[0], l[1]), (-l[0], -l[1])):
+                    nx, nz = self.pos[0] + vx * r, self.pos[2] + vz * r
+                    if self.fall_clear(nx, nz, d):
+                        for s in ("l", "r"):
+                            self.feet[s][0] += nx - self.pos[0]
+                            self.feet[s][2] += nz - self.pos[2]
+                        self.pos[0], self.pos[2] = nx, nz
+                        moved = True
+                        break
+                if moved:
+                    break
+            if not moved:
+                d = 0.0
+                land = 0.0
+        for s in ("l", "r"):
+            self.feet[s][1] += d
+        self.pos[1] += d
+        if land is not None:
+            self.falling = False
+            self.impacts.append(-self.vy)
+            self.dip = LAND_DIP * min(1.0, -self.vy / 10.0)
+            self.vy = 0.0
+
     def tick(self, dt, aim_at=None):
         approach = lambda v, t, s: min(t, v + s) if v < t else max(t, v - s)
         self.speed = approach(self.speed, self.want_speed, G["accel"] * dt)
         self.turn = approach(self.turn, self.want_turn, G["turn_accel"] * dt)
+
+        # gravity: a planted foot that lost its ground steps at once; with no
+        # step to take, or both feet gone, the mech falls
+        if not self.falling:
+            planted = [s for s in ("l", "r") if self.swing[s] is None]
+            lost = [s for s in planted if not self.supported(s)]
+            if lost and (len(lost) == 2 or len(planted) == 1):
+                self.falling = True
+            elif lost:
+                s = lost[0]
+                self.forced += 1
+                if not self.plan_step(s, 0.0, self.pos[0], self.pos[2], self.yaw, may_step_off=False):
+                    self.falling = True
+            if self.falling:
+                self.falls += 1
+                self.vy = 0.0
+                self.swing = {"l": None, "r": None}
+        if self.falling:
+            self.speed = 0.0
+            self.turn = 0.0
+            self.fall(dt)
+            return self.legs({"l": 0.0, "r": 0.0}, {"l": 0.0, "r": 0.0}, {s: self.feet[s][1] for s in "lr"})
         gy = self.pos[1]
 
         # body: move unless a probe would hit a block or a planted leg would
@@ -264,7 +433,7 @@ class Walker:
             nx, nz = self.pos[0] + cdx, self.pos[2] + cdz
             if not self.probes_clear(nx, nz, cy, self.aim, gy, self.body_y):
                 continue
-            if all(self.foot_ok(self.feet[s], nx, nz, cy, gy) for s in planted):
+            if self.legs_allow(nx, nz, cy, gy):
                 if (cdx, cdz) != (dx, dz):
                     self.speed = math.hypot(cdx, cdz) / dt * (1 if self.speed >= 0 else -1)
                 if cy != yaw2:
@@ -297,20 +466,7 @@ class Walker:
             other = math.dist((self.feet[o][0], self.feet[o][2]), self.home(o, lead))
             if off > (STEP if moving else SETTLE) and off >= other:
                 lx, lz = self.pos[0] + f[0] * self.speed * SWING, self.pos[2] + f[1] * self.speed * SWING
-                lyaw = self.yaw + math.radians(self.turn) * SWING
-                tx, tz = self.home(s, lead, lx, lz, lyaw)
-                a = self.feet[s]
-                for frac in STEP_FRACTIONS:
-                    ex, ez = a[0] + (tx - a[0]) * frac, a[2] + (tz - a[2]) * frac
-                    ey = self.ground(ex, ez, lyaw, a[1])
-                    if ey is None or abs(ey - self.feet[o][1]) > MAX_RISE:
-                        continue
-                    if not self.path_clear(a, (ex, ey, ez), lyaw):
-                        continue
-                    # the body will stand at the feet's average height once it lands
-                    if self.foot_ok((ex, ey, ez), lx, lz, lyaw, (ey + self.feet[o][1]) / 2):
-                        self.swing[s] = (0.0, list(a), [ex, ey, ez])
-                        break
+                self.plan_step(s, lead, lx, lz, self.yaw + math.radians(self.turn) * SWING)
 
         # swing
         lift = {"l": 0.0, "r": 0.0}
@@ -331,15 +487,23 @@ class Walker:
             foot_y[s] = self.feet[s][1]
             self.swing[s] = None if t >= 1.0 else (t, a, b)
 
-        # body height follows the feet, but never so far that a planted leg
-        # would be stretched out of reach
-        target_y = (foot_y["l"] + foot_y["r"]) / 2
+        # body height follows the feet (a swinging foot by where it will land),
+        # but never so far that a planted leg would be stretched out of reach
+        target_y = sum(self.swing[s][2][1] if self.swing[s] is not None else foot_y[s] for s in "lr") / 2
         y2 = approach(self.pos[1], target_y, CLIMB * dt)
-        if all(self.foot_ok(self.feet[s], self.pos[0], self.pos[2], self.yaw, y2)
-               for s in ("l", "r") if self.swing[s] is None):
+        # the bob and the landing dip settle first, so the height is checked with them
+        dip2 = approach(self.dip, 0.0, DIP_RATE * dt)
+        body2 = -CROUCH + BOB * rise - dip2
+        if self.legs_allow(self.pos[0], self.pos[2], self.yaw, y2) and \
+                self.probes_clear(self.pos[0], self.pos[2], self.yaw, self.aim, y2, body2):
             self.pos[1] = y2
-        self.body_y = -CROUCH + BOB * rise
+        if self.probes_clear(self.pos[0], self.pos[2], self.yaw, self.aim, self.pos[1], body2):
+            self.dip, self.body_y = dip2, body2
+        return self.legs(lift, arcs, foot_y)
 
+    def legs(self, lift, arcs, foot_y):
+        """Joint angles for both legs (IK to each foot)."""
+        f = fwd(self.yaw)
         pose = {}
         for s in ("l", "r"):
             mz = (self.feet[s][0] - self.pos[0]) * f[0] + (self.feet[s][2] - self.pos[2]) * f[1]
@@ -366,10 +530,10 @@ def out_of_range(pose):
     return bad
 
 
-def course(name, build, speed, ticks=500, expect=None, turn=0.0):
+def course(name, build, speed, ticks=500, expect=None, turn=0.0, start_y=0.0):
     w = World()
     build(w)
-    m = Walker(w)
+    m = Walker(w, y=start_y)
     m.want_speed = speed
     m.want_turn = turn
     worst, inside, ylo, yhi = [], 0, 1e9, -1e9
@@ -385,8 +549,60 @@ def course(name, build, speed, ticks=500, expect=None, turn=0.0):
         good = expect(m)
         ok &= good
         verdict = "as expected" if good else "NOT AS EXPECTED"
+    hit = f", landed at {max(m.impacts):.1f} m/s" if m.impacts else ""
     print(f"{name:34s} ended at z {m.pos[2]:6.1f}, ground {ylo:.1f}..{yhi:.1f}, blocked {m.blocked:3d} ticks, "
-          f"probe hits {inside}, joints {'ok' if not worst else 'OUT ' + str(worst[:3])} {verdict}")
+          f"probe hits {inside}, joints {'ok' if not worst else 'OUT ' + str(worst[:3])}{hit} {verdict}")
+    return ok
+
+
+def gravity_checks():
+    ok = True
+    # spawned in the air: falls and lands on the ground
+    m = Walker(World(), y=8.0)
+    worst = []
+    for _ in range(200):
+        worst += out_of_range(m.tick(0.05))
+    good = not m.falling and abs(m.pos[1]) < 0.01 and not worst and len(m.impacts) == 1
+    print(f"{'spawned 8 m up':34s} ended at ground {m.pos[1]:.2f}, landed at {m.impacts[0] if m.impacts else 0:.1f} m/s, joints "
+          f"{'ok' if not worst else 'OUT'} {'as expected' if good else 'NOT AS EXPECTED'}")
+    ok &= good
+
+    # standing on a platform that is removed: falls to the ground below
+    w = World()
+    for x in range(-12, 13):
+        for z in range(-12, 13):
+            w.tops[(x, z)] = 4
+    m = Walker(w, y=4.0)
+    for _ in range(20):
+        m.tick(0.05)
+    w.tops.clear()
+    worst = []
+    for _ in range(200):
+        worst += out_of_range(m.tick(0.05))
+    good = not m.falling and abs(m.pos[1]) < 0.01 and not worst and m.falls == 1
+    print(f"{'platform removed (4 blocks)':34s} ended at ground {m.pos[1]:.2f}, falls {m.falls}, joints "
+          f"{'ok' if not worst else 'OUT'} {'as expected' if good else 'NOT AS EXPECTED'}")
+    ok &= good
+
+    # a pit opens under one foot: that foot steps instead of the mech falling
+    w = World()
+    for x in range(-12, 13):
+        for z in range(-12, 13):
+            w.tops[(x, z)] = 1
+    m = Walker(w, y=1.0)
+    for _ in range(20):
+        m.tick(0.05)
+    fx, fz = m.feet["l"][0], m.feet["l"][2]
+    for x in range(math.floor(fx) - 1, math.floor(fx) + 2):
+        for z in range(math.floor(fz) - 1, math.floor(fz) + 3):
+            w.tops[(x, z)] = 0
+    worst = []
+    for _ in range(100):
+        worst += out_of_range(m.tick(0.05))
+    good = not m.falling and m.falls == 0 and m.forced >= 1 and not worst and m.supported("l") and m.supported("r")
+    print(f"{'pit under one foot':34s} feet at {m.feet['l'][1]:.0f}/{m.feet['r'][1]:.0f}, forced steps {m.forced}, "
+          f"falls {m.falls}, joints {'ok' if not worst else 'OUT'} {'as expected' if good else 'NOT AS EXPECTED'}")
+    ok &= good
     return ok
 
 
@@ -437,12 +653,12 @@ def main():
 
     def wall(w):      # one block thick: too high to step over
         for x in range(-20, 21):
-            w.tops[(x, 14)] = 3
+            w.tops[(x, 14)] = 4
 
-    def cliff(w):     # three blocks up: too high to climb
+    def cliff(w):     # four blocks up: too high to climb
         for x in range(-20, 21):
             for z in range(14, 40):
-                w.tops[(x, z)] = 3
+                w.tops[(x, z)] = 4
 
     def bar(w):   # a beam at turret height, open underneath
         for x in range(-20, 21):
@@ -452,21 +668,31 @@ def main():
     print()
     ok &= course("one-block step up and down", platform(1, 12, 30), MAX_SPEED,
                  expect=lambda m: m.pos[2] > 32)
-    ok &= course("two-block ledge (too high)", platform(2, 12, 30), 0.5 * MAX_SPEED,
+    ok &= course("two-block step up and down", platform(2, 12, 30), 0.5 * MAX_SPEED,
+                 expect=lambda m: m.pos[2] > 32)
+    ok &= course("three-block step up and down", platform(3, 12, 30), MAX_SPEED,
+                 expect=lambda m: m.pos[2] > 31)
+    ok &= course("three-block step, walking slowly", platform(3, 12, 30), 0.5 * MAX_SPEED,
+                 expect=lambda m: m.pos[2] > 31, ticks=700)
+    ok &= course("four-block ledge (too high)", platform(4, 12, 30), MAX_SPEED,
                  expect=lambda m: m.pos[2] < 13 and m.blocked > 50)
     ok &= course("one-block step down", lambda w: [w.tops.__setitem__((x, z), 1 if z < 12 else 0)
                                                    for x in range(-20, 21) for z in range(-10, 40)],
                  MAX_SPEED, expect=lambda m: m.pos[2] > 30)
-    ok &= course("three-block wall (too high)", wall, MAX_SPEED,
+    ok &= course("four-block wall (too high)", wall, MAX_SPEED,
                  expect=lambda m: m.pos[2] < 14 and m.blocked > 50 and max(m.feet["l"][2], m.feet["r"][2]) < 14)
-    ok &= course("three-block cliff (too high)", cliff, MAX_SPEED,
+    ok &= course("four-block cliff (too high)", cliff, MAX_SPEED,
                  expect=lambda m: m.pos[2] < 14 and m.blocked > 50)
     ok &= course("bar at turret height", bar, MAX_SPEED,
                  expect=lambda m: m.pos[2] < 16 and m.blocked > 50)
-    ok &= course("two-block drop (too deep)", lambda w: [w.tops.__setitem__((x, z), 2 if z < 12 else 0)
-                                                          for x in range(-20, 21) for z in range(-10, 40)],
-                 MAX_SPEED, expect=lambda m: m.pos[1] > 1.99 and max(m.feet["l"][2], m.feet["r"][2]) + G["foot_mid"] < 12.05
-                 and m.blocked > 50)
+    ok &= course("three-block step down", lambda w: [w.tops.__setitem__((x, z), 3 if z < 12 else 0)
+                                                     for x in range(-20, 21) for z in range(-10, 60)],
+                 MAX_SPEED, expect=lambda m: m.pos[2] > 30 and m.falls == 0)
+    for top, edge in ((12, 12), (14, 14), (30, 9)):
+        ok &= course(f"walking off a {top}-block cliff", lambda w, top=top, edge=edge: [
+            w.tops.__setitem__((x, z), top if z < edge else 0) for x in range(-20, 21) for z in range(-12, 60)],
+            MAX_SPEED, expect=lambda m: m.falls == 1 and len(m.impacts) == 1 and m.impacts[0] > 15
+            and abs(m.pos[1]) < 0.01, start_y=float(top))
 
     def side_wall(w):   # a tall wall just right of the mech, along its path
         for z in range(-10, 40):
@@ -474,6 +700,7 @@ def main():
                 w.blocks.add((-4, y, z))
     ok &= course("turning on the spot beside a wall", side_wall, 0.0, turn=-MAX_TURN,
                  expect=lambda m: True)
+    ok &= gravity_checks()
     ok &= course("stairs up (1 block every 3)", lambda w: [w.tops.__setitem__((x, z), max(0, (z - 9) // 3))
                                                           for x in range(-20, 21) for z in range(9, 40)],
                  MAX_SPEED, expect=lambda m: m.pos[1] > 6)

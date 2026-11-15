@@ -3,6 +3,7 @@
 
 playerevent join {
     packSend();
+    pilotHideAllFrom();
 }
 
 playerevent command {
@@ -22,10 +23,14 @@ playerevent command {
         poseCommand(line words);
     } else if (line cmd == "walk" || line cmd == "turn" || line cmd == "stop" || line cmd == "follow") {
         driveCommand(line cmd, line words);
+    } else if (line cmd == "board" || line cmd == "pilot") {
+        boardNearest();
+    } else if (line cmd == "exit") {
+        exitMech();
     } else if (line cmd == "pack") {
         packSend();
     } else {
-        default.sendMessage(s"<gray>Commands: <yellow>@mech [turn]</yellow>, <yellow>@walk [m/s] [turn]</yellow>, <yellow>@turn [deg/s]</yellow>, <yellow>@stop</yellow>, <yellow>@follow</yellow>, <yellow>@pose JOINT DEGREES</yellow>, <yellow>@pose reset</yellow>, <yellow>@clearmechs</yellow>, <yellow>@pack</yellow>");
+        default.sendMessage(s"<gray>Commands: <yellow>@mech [turn]</yellow>, <yellow>@walk [m/s] [turn]</yellow>, <yellow>@turn [deg/s]</yellow>, <yellow>@stop</yellow>, <yellow>@follow</yellow>, <yellow>@board</yellow>, <yellow>@exit</yellow> (or F), <yellow>@pose JOINT DEGREES</yellow>, <yellow>@pose reset</yellow>, <yellow>@clearmechs</yellow>, <yellow>@pack</yellow>");
     }
 }
 

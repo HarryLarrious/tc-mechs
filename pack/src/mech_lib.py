@@ -45,11 +45,12 @@ GAIT = {
     "max_turn": 40.0,    # degrees/s
     "turn_accel": 80.0,  # degrees/s^2
     "aim_rate": 30.0,    # how fast the torso turns toward its aim, degrees/s
+    "pilot_aim_rate": 60.0,  # ...when a pilot is aiming it
     "toe": 12.0,         # toe pitch at mid-swing
     # terrain
-    "max_rise": 0.57,    # a foot may land at most this far above or below the other (1.2 m real: one
-                         # block; two would fold the knee past its range)
-    "probe_up": 1.2,     # ground under a foot is looked for from this far above it...
+    "max_rise": 1.52,    # a foot may land at most this far above or below the other (3.2 m real: three
+                         # blocks); a deeper drop is walked off, and the mech falls
+    "probe_up": 1.76,    # ground under a foot is looked for from this far above it (above max_rise)...
     "probe_down": 1.5,   # ...down to this far below it
     "climb_rate": 1.0,   # how fast the body follows the feet's height, per second
     "foot_heel": -0.29,  # where the ground under a foot is sampled, from its ankle point:
@@ -58,9 +59,22 @@ GAIT = {
     "foot_side": 0.24,
     "margin": 1.0,       # a foothold is refused when a joint would come within this of its limit (degrees)
     "max_reach": 0.97,   # ...or the leg would stretch past this share of its length
+    # gravity
+    "gravity": 15.0,     # m/s^2 (real; heavier-feeling than Minecraft's)
+    "max_fall": 40.0,    # m/s, the fastest fall
+    "land_dip": 0.15,    # how far the body sinks into its legs on a hard landing
+    "dip_rate": 0.5,     # how fast it comes back up, per second
+    "fall_drift": 2.0,   # how fast falling feet swing to hang under the hips, per second
+    # parked: down on the left knee (solved offline to fit the joint limits:
+    # the right foot flat on the ground ahead, the left knee guard just off it,
+    # the left foot behind resting on its toes)
+    "kneel_drop": 1.571, # how far the body sinks below the standing rest pose (3.3 m real)
+    "kneel_time": 1.5,   # seconds to kneel or stand up
 }
+KNEEL_POSE = {"hip_l": 41.0, "knee_l": 47.0, "ankle_l": -1.0, "hip_r": -102.0, "knee_r": 64.0, "ankle_r": 38.0}
 GAIT_LENGTHS = ("crouch", "lift", "bob", "step", "settle", "max_speed", "accel", "max_rise", "probe_up",
-                "probe_down", "climb_rate", "foot_heel", "foot_mid", "foot_toe", "foot_side")
+                "probe_down", "climb_rate", "foot_heel", "foot_mid", "foot_toe", "foot_side", "land_dip",
+                "dip_rate", "fall_drift", "kneel_drop")
 
 # Collision probes (design size, mech frame): points that must stay out of
 # solid blocks. "body" ones turn with the body's heading, "torso" ones with

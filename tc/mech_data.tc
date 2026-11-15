@@ -9,11 +9,11 @@
 function mechSegData(): list {
     return [
         "pelvis 0 - - 0 0 0 0 0",
-        "thigh_l 1 hip_l x 1.575 6.3 0 -45 42",
-        "shin_l 2 knee_l x 1.575 4.095 1.155 -45 45",
+        "thigh_l 1 hip_l x 1.575 6.3 0 -105 42",
+        "shin_l 2 knee_l x 1.575 4.095 1.155 -75 75",
         "foot_l 3 ankle_l x 1.575 1.302 -0.63 -43 42",
-        "thigh_r 1 hip_r x -1.575 6.3 0 -45 42",
-        "shin_r 5 knee_r x -1.575 4.095 1.155 -45 45",
+        "thigh_r 1 hip_r x -1.575 6.3 0 -105 42",
+        "shin_r 5 knee_r x -1.575 4.095 1.155 -75 75",
         "foot_r 6 ankle_r x -1.575 1.302 -0.63 -43 42",
         "torso 1 waist y 0 8.19 0 -180 180",
         "hgun_l 8 elev_hl x 2.73 9.24 0.105 -35 12",
@@ -82,6 +82,7 @@ function mechPartData(): list {
         "torso_frame mech:torso/torso_frame 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "torso_front mech:torso/torso_front 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "torso_top mech:torso/torso_top 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
+        "hatch mech:torso/hatch 8 hinge_x 0 10.248 -1.89 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "torso_side_l mech:torso/torso_side_l 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "torso_side_r mech:torso/torso_side_r 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "cockpit mech:torso/cockpit 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
@@ -103,7 +104,7 @@ function mechPartData(): list {
 
 /** Number of parts. */
 function mechPartCount(): num {
-    return 63;
+    return 64;
 }
 
 /** The scale the mech was built at (MECH_SCALE): sizes in the gait are
@@ -116,7 +117,7 @@ function mechScale(): num {
  * size): lengths in meters, speeds in m/s, times in seconds, angles in
  * degrees. */
 function mechGait(): dict {
-    return {crouch: 0.42, swing: 0.6, lift: 0.525, bob: 0.105, step: 0.63, settle: 0.126, lead: 0.5, max_speed: 3.78, accel: 1.68, max_turn: 40, turn_accel: 80, aim_rate: 30, toe: 12, max_rise: 1.197, probe_up: 2.52, probe_down: 3.15, climb_rate: 2.1, foot_heel: -0.609, foot_mid: 0.693, foot_toe: 1.995, foot_side: 0.504, margin: 1, max_reach: 0.97};
+    return {crouch: 0.42, swing: 0.6, lift: 0.525, bob: 0.105, step: 0.63, settle: 0.126, lead: 0.5, max_speed: 3.78, accel: 1.68, max_turn: 40, turn_accel: 80, aim_rate: 30, pilot_aim_rate: 60, toe: 12, max_rise: 3.192, probe_up: 3.696, probe_down: 3.15, climb_rate: 2.1, foot_heel: -0.609, foot_mid: 0.693, foot_toe: 1.995, foot_side: 0.504, margin: 1, max_reach: 0.97, gravity: 15, max_fall: 40, land_dip: 0.315, dip_rate: 1.05, fall_drift: 4.2, kneel_drop: 3.299, kneel_time: 1.5};
 }
 
 /** Collision probes, each "frame x y z" (mech frame, meters): points that
@@ -157,6 +158,23 @@ function mechProbes(): list {
         "torso -2.73 9.24 2.52",
         "torso -2.73 9.24 5.25"
     ];
+}
+
+/** The parked kneel (degrees per leg joint): down on the left knee. */
+function mechKneelPose(): dict {
+    return {hip_l: 41, knee_l: 47, ankle_l: -1, hip_r: -102, knee_r: 64, ankle_r: 38};
+}
+
+/** The roof hatch's center, on top of the roof, in the mech frame at rest (m):
+ * boarding drops the pilot in through it. */
+function mechHatchCenter(): vec {
+    return vec(0, 10.248, -1.428);
+}
+
+/** The pilot's seat: the top center of the chair's seat in the mech frame
+ * at rest (it turns with the torso). A rider's eyes are 1.03 m above it. */
+function mechCockpitSeat(): vec {
+    return vec(0, 8.784, 0.236);
 }
 
 /** Default armor paint and accent colors. */
