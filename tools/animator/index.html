@@ -227,6 +227,7 @@ function rotAbout(p, d, axis) {
   return t.multiply(r).multiply(new THREE.Matrix4().makeTranslation(-p[0], -p[1], -p[2]));
 }
 function segMatrices() {
+  if (spec.joints.lid) pose.lid = hatchAngle * spec.joints.lid.range[0] / -110;   // the spider's lid opens with the hatch
   const out = { pelvis: new THREE.Matrix4() };
   for (const [j, J] of Object.entries(spec.joints)) out[J.child] = out[J.parent].clone().multiply(rotAbout(J.pivot, pose[j], J.axis));
   return out;

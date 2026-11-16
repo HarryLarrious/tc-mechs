@@ -1,0 +1,429 @@
+{
+ "textures": {
+  "accent_dmg": "mech:item/mech/accent_dmg",
+  "armor_dmg": "mech:item/mech/armor_dmg",
+  "particle": "mech:item/mech/accent_dmg"
+ },
+ "elements": [
+  {
+   "from": [
+    5.8919,
+    5.9157,
+    6.3369
+   ],
+   "to": [
+    6.6599,
+    6.0757,
+    10.3428
+   ],
+   "rotation": {
+    "origin": [
+     6.2759,
+     5.9957,
+     8.3399
+    ],
+    "x": -95.589,
+    "y": 56.583,
+    "z": 155.415
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    }
+   }
+  },
+  {
+   "from": [
+    5.8852,
+    5.8486,
+    5.6781
+   ],
+   "to": [
+    6.6532,
+    6.0086,
+    9.684
+   ],
+   "rotation": {
+    "origin": [
+     6.2692,
+     5.9286,
+     7.681
+    ],
+    "x": -93.262,
+    "y": -56.512,
+    "z": 149.623
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    }
+   }
+  },
+  {
+   "from": [
+    4.8563,
+    5.7205,
+    7.9909
+   ],
+   "to": [
+    8.4478,
+    5.8485,
+    9.2704
+   ],
+   "rotation": {
+    "origin": [
+     6.652,
+     5.7845,
+     8.6306
+    ],
+    "x": -94.675,
+    "y": -0.976,
+    "z": 57.629
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    }
+   }
+  },
+  {
+   "from": [
+    4.886,
+    5.7357,
+    6.7296
+   ],
+   "to": [
+    8.4775,
+    5.8637,
+    8.0091
+   ],
+   "rotation": {
+    "origin": [
+     6.6817,
+     5.7997,
+     7.3693
+    ],
+    "x": -88.234,
+    "y": 2.495,
+    "z": 62.752
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    }
+   }
+  },
+  {
+   "from": [
+    4.7039,
+    4.4906,
+    7.717
+   ],
+   "to": [
+    5.6639,
+    4.6506,
+    8.2066
+   ],
+   "rotation": {
+    "origin": [
+     5.1839,
+     4.5706,
+     7.9618
+    ],
+    "x": 71.896,
+    "y": -91.213,
+    "z": -0.036
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#accent_dmg",
+     "tintindex": 1
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#accent_dmg",
+     "tintindex": 1
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#accent_dmg",
+     "tintindex": 1
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#accent_dmg",
+     "tintindex": 1
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#accent_dmg",
+     "tintindex": 1
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#accent_dmg",
+     "tintindex": 1
+    }
+   }
+  }
+ ]
+}

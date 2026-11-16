@@ -1,16 +1,20 @@
 // A self-test of the walk on the plot's own ground: @selftest (or, while
-// mechSelfTestOnJoin() returns 1, joining the plot) drives a sprinter and
-// then a walker at full speed straight ahead from where the player stands,
+// mechSelfTestOnJoin() returns 1, joining the plot) drives each type in
+// selfTestKinds() at full speed straight ahead from where the player stands,
 // then up the highest ground within 60 blocks, and reports each run in
 // chat: how far it went, how high it got, and every stall (full speed to a
 // stop while it is meant to be walking, not falling or kneeling) and stuck
-// stretch (no progress for a second and a half). Mechs are cleared first.
+// stretch (no progress for a second and a half); for a spider also how long
+// it spent on walls, and a jump straight up. Mechs are cleared first.
 
 /** The player the self-test reports to. */
 declare global stPlayer: str;
 /** The type the current run drives (a global, so nothing the run calls can
  * change it). */
 declare global stKind: num;
+/** Everything the self-test has said this time (repeated at the end, so
+ * it can all be read at once). */
+declare global stLog: list[str];
 /** 1: the self-test prints each run's speed every second (a debugging aid). */
 declare global stTrace: num;
 
@@ -26,8 +30,15 @@ function mechSelfTestTrace(): num {
     return 0;
 }
 
+/** The types the self-test drives, in order (3 the spider, 2 the sprinter,
+ * 1 the walker). */
+function selfTestKinds(): list {
+    return [3, 2, 1];
+}
+
 /** Tells the self-test's player `msg`. */
 function selfTestSay(msg: str) {
+    global stLog.append(msg);
     select playersByName(global stPlayer);
     selected.sendMessage(s"<aqua>[selftest]</aqua> <white>%var(msg)");
     select reset;
@@ -53,6 +64,8 @@ function selfTestRun(from: vec, yaw: num, ticks: num, goal: vec, label: str) {
     line ran = 0;
     line done = 0;
     line rolling = 0;
+    line walls = 0;
+    line behind = 0;
     repeat (line t to ticks) {
         if (line done == 0) {
             wait;
@@ -69,8 +82,28 @@ function selfTestRun(from: vec, yaw: num, ticks: num, goal: vec, label: str) {
                 line rolling = 1;
             }
             line fastest = num.max(line fastest, line sp);
+            // a planted foot left beyond its comfort radius (dragged)
+            line bU = vec(0, 1, 0);
+            line bF = vec(0 - num.sin(global mYaw[line m]), 0, num.cos(global mYaw[line m]));
+            if (global gLegs == 4) {
+                line bU = global sUp[line m];
+                line bF = global sFwd[line m];
+            }
+            if (!line busy && legsBehind(line m, line pos, line bU, line bF) == 1) {
+                line behind += 1;
+            }
+            if (global gLegs == 4 && global gFalling[line m] == 0 && global sUp[line m].y < 0.7) {
+                line walls += 1;
+            }
             line top = num.max(line top, line pos.y);
             line hist.append(line pos);
+            if (global stTrace >= 1 && global gLegs == 4 && line ran % (20 / global stTrace) == 0) {
+                line pu = global sUp[line m];
+                line pf = global sFwd[line m];
+                line pc = (global sCorner[line m] as list).len();
+                line pfl = global gFalling[line m];
+                selfTestSay("  t%var(ran) pos %var(pos) sp %var(sp) up %var(pu) fwd %var(pf) corner %var(pc) fall %var(pfl)");
+            }
             if (global stTrace == 1 && line ran % 20 == 0) {
                 line ws = num.round(global gWantSpeed[line m] * 10) / 10;
                 line spd = num.round(line sp * 10) / 10;
@@ -98,6 +131,44 @@ function selfTestRun(from: vec, yaw: num, ticks: num, goal: vec, label: str) {
     line ran_as = line tn[global mType[line m]] as str;
     line msg = "%var(label) (ran a %var(ran_as)): went %var(went) m in %var(secs) s, rose %var(rose) m, top speed %var(fast) m/s, stalls %var(stalls), stuck ticks %var(stuck)";
     selfTestSay(line msg);
+    selfTestSay("  feet left behind %var(behind) ticks");
+    if (global gLegs == 4) {
+        line ws = num.round(line walls / 2) / 10;
+        selfTestSay("  on walls %var(ws) s");
+    }
+}
+
+/** A spider stands up at `from` facing `yaw` and jumps; reports how high it
+ * got and how hard it landed. */
+function selfTestJump(from: vec, yaw: num) {
+    clearMechs();
+    useType(3);
+    line cols = mechDefaultColors();
+    line m = spawnMech(loc(from.x, from.y, from.z, 0, yaw), line cols[1] as num, line cols[2] as num, 3);
+    useMech(line m);
+    gaitDrive(line m, 0.3, 0);
+    line waited = 0;
+    while (global gKneel[line m] > 0 && line waited < 80) {
+        wait;
+        line waited += 1;
+    }
+    global gWantSpeed[line m] = 0;
+    line y0 = global mPos[line m].y;
+    mechLeap(line m);
+    line top = line y0;
+    line air = 0;
+    repeat (line t to 100) {
+        wait;
+        if (global gFalling[line m] == 1) {
+            line air += 1;
+        }
+        line top = num.max(line top, global mPos[line m].y);
+    }
+    line h = num.round((line top - line y0) * 10) / 10;
+    line secs = num.round(line air / 2) / 10;
+    line hit = num.round(global gImpact[line m] * 10) / 10;
+    line falling = global gFalling[line m];
+    selfTestSay("spider jump: rose %var(h) m, %var(secs) s in the air, landed at %var(hit) m/s, still falling %var(falling)");
 }
 
 /** The highest block top within `r` blocks of `c` (every 4 blocks), as a
@@ -126,6 +197,99 @@ function selfTestHill(c: vec, r: num): vec {
     return line best;
 }
 
+/** A wall within r blocks of c for a spider to climb: a block column at
+ * least 4 blocks higher than the one beside it, with ground about as high as
+ * that 8 blocks back. [where to start (8 blocks back), the way to the wall,
+ * the wall's top] or []. */
+function selfTestWall(c: vec, r: num): list {
+    line n = 0;
+    line dx = 0 - r;
+    while (line dx <= r) {
+        line dz = 0 - r;
+        while (line dz <= r) {
+            line x = num.floor(c.x + line dx) + 0.5;
+            line z = num.floor(c.z + line dz) + 0.5;
+            line h = colTop(line x, line z, c.y + 40, 60);
+            if (line h > -900) {
+                for (line d of [vec(1, 0, 0), vec(-1, 0, 0), vec(0, 0, 1), vec(0, 0, -1)]) {
+                    line dv = line d as vec;
+                    line h2 = colTop(line x + line dv.x, line z + line dv.z, c.y + 40, 60);
+                    if (line h2 - line h >= 4) {
+                        line hb = colTop(line x - line dv.x * 8, line z - line dv.z * 8, c.y + 40, 60);
+                        if (line hb > -900 && num.abs(line hb - line h) <= 1) {
+                            return [vec(line x - line dv.x * 8, line hb, line z - line dv.z * 8), line dv, line h2];
+                        }
+                    }
+                }
+            }
+            line n += 1;
+            if (line n % 60 == 0) {
+                wait;
+            }
+            line dz += 2;
+        }
+        line dx += 2;
+    }
+    return [];
+}
+
+/** Builds a stone wall 6 blocks high and 7 wide 12 blocks from `origin`,
+ * ahead of it (the axis nearest `fwd`), or else behind or to a side: where
+ * the ground is flat and every block of the wall is air now. Runs a spider at
+ * it from origin, then takes the wall away again. */
+function selfTestBuiltWall(origin: vec, fwd: vec) {
+    for (line d of [fwd, fwd * -1, vec(fwd.z, 0, 0 - fwd.x), vec(0 - fwd.z, 0, fwd.x)]) {
+        if (selfTestWallAt(origin, line d as vec) == 1) {
+            return;
+        }
+    }
+    selfTestSay("no flat, clear ground for a test wall: wall climbing not tested");
+}
+
+/** The test wall 12 blocks from origin along the axis nearest fwd, if the
+ * ground there is flat and clear: 1 if it was built and run at, else 0. */
+function selfTestWallAt(origin: vec, fwd: vec): num {
+    line ax = vec(0, 0, 1);
+    if (fwd.z < 0) {
+        line ax = vec(0, 0, -1);
+    }
+    if (num.abs(fwd.x) > num.abs(fwd.z)) {
+        line ax = vec(1, 0, 0);
+        if (fwd.x < 0) {
+            line ax = vec(-1, 0, 0);
+        }
+    }
+    line side = vec(num.abs(line ax.z), 0, num.abs(line ax.x));
+    line g0 = colTop(origin.x, origin.z, origin.y + 40, 60);
+    line c = origin + line ax * 12;
+    line cx = num.floor(line c.x);
+    line cz = num.floor(line c.z);
+    line g = colTop(line cx + 0.5, line cz + 0.5, origin.y + 40, 60);
+    if (line g0 < -900 || line g < -900 || num.abs(line g - line g0) > 1) {
+        return 0;
+    }
+    // (block heights: the ground's top can read as 49.99 for 50)
+    line gy = num.round(line g);
+    line a = vec(line cx, line gy, line cz) - line side * 3;
+    line b = vec(line cx, line gy + 5, line cz) + line side * 3;
+    repeat (line k to 7) {
+        repeat (line h to 6) {
+            line p = line a + line side * (line k - 1) + vec(0, line h - 1, 0);
+            line blk = game.getBlockMaterial(loc(line p.x + 0.5, line p.y + 0.5, line p.z + 0.5), returnValue="Item");
+            if (line blk.isSolid()) {
+                return 0;
+            }
+        }
+    }
+    game.setRegion(item("stone"), loc(line a.x, line a.y, line a.z), loc(line b.x, line b.y, line b.z));
+    selfTestSay("built a test wall 6 m high, 12 m ahead");
+    global stKind = 3;
+    line from = vec(origin.x, line g0, origin.z);
+    selfTestRun(line from, angYZ(line ax.z, 0 - line ax.x), 260, line from + line ax * 22, "spider wall");
+    game.setRegion(item("air"), loc(line a.x, line a.y, line a.z), loc(line b.x, line b.y, line b.z));
+    return 1;
+}
+
 process mechSelfTest {
     wait(3, unit="Seconds");
     select playersByName(global stPlayer);
@@ -135,14 +299,18 @@ process mechSelfTest {
     line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
     line here = vec(line feet.x, line feet.y, line feet.z);
     line from = line here + line F * 10;
+    global stLog = [];
     selfTestSay("walk self-test: straight ahead at full speed, then up the highest ground near you");
     line names = mechTypeNames();
     global stTrace = mechSelfTestTrace();
     if (global stTrace == 0) {
-        for (line k of [2, 1]) {
+        for (line k of selfTestKinds()) {
             global stKind = line k as num;
             line name = line names[global stKind] as str;
             selfTestRun(line from, line yaw, 220, vec(0, 0, 0), "%var(name) straight");
+        }
+        if (selfTestKinds().find(3) != 0) {
+            selfTestJump(line from, line yaw);
         }
     }
     line hill = selfTestHill(line here, 60);
@@ -153,7 +321,7 @@ process mechSelfTest {
     line d = line hill - line here;
     line hyaw = angYZ(line d.z, 0 - line d.x);
     line hF = vec(0 - num.sin(line hyaw), 0, num.cos(line hyaw));
-    line kinds = [2, 1];
+    line kinds = selfTestKinds();
     if (global stTrace == 1) {
         line kinds = [2];
     }
@@ -162,8 +330,33 @@ process mechSelfTest {
         line name = line names[global stKind] as str;
         selfTestRun(line here + line hF * 6, line hyaw, 400, line hill, "%var(name) climb");
     }
+    // a spider runs at the nearest wall: up it and over the top
+    if (global stTrace == 0 && selfTestKinds().find(3) != 0) {
+        line wall = selfTestWall(line here, 40);
+        if (line wall.len() == 3) {
+            line ws = line wall[1] as vec;
+            line wd = line wall[2] as vec;
+            line wtop = line wall[3] as num;
+            line wh = num.round(line wtop - line ws.y);
+            line wx = num.round(line ws.x + line wd.x * 8);
+            line wz = num.round(line ws.z + line wd.z * 8);
+            selfTestSay("a wall %var(wh) m high at %var(wx) %var(wz)");
+            global stKind = 3;
+            selfTestRun(line ws, angYZ(line wd.z, 0 - line wd.x), 260, vec(line ws.x + line wd.x * 12, line wtop, line ws.z + line wd.z * 12), "spider wall");
+        } else {
+            selfTestBuiltWall(line from, line F);
+        }
+    }
     clearMechs();
-    selfTestSay("done");
+    // everything again, together
+    line all = global stLog;
+    select playersByName(global stPlayer);
+    selected.sendMessage(s"<aqua>[selftest]</aqua> <white>summary:");
+    for (line msg of line all) {
+        selected.sendMessage(s"<aqua>  -</aqua> <white>%var(msg)");
+    }
+    selected.sendMessage(s"<aqua>[selftest]</aqua> <white>done");
+    select reset;
 }
 
 /** @selftest: runs the walk self-test from where the player stands. */

@@ -1,0 +1,436 @@
+// The legs: where each foot goes and when it steps, for every type (two
+// legs or four). Modeled on TheCymaera's procedural spider
+// (github.com/TheCymaera/minecraft-spider, Leg.kt and GaitType.kt): every
+// leg looks for its ground every tick, a leg that has to step always does
+// (to the ground, or reaching into the air if there is none: legs are never
+// dragged), and the body slows down for a leg left far behind.
+//
+// * Rest spot: where a foot stands with the body still, on the surface under
+//   it (lRest, in the body frame). Look-ahead spot: the rest spot moved
+//   lLook of the trigger radius the way the body moves, and turned with it.
+// * Ground: a ray down (along the body's up) through the look-ahead spot,
+//   from gUp above the surface to gDown below it. A hit within a step of the
+//   surface is the target. Otherwise (a block edge, a step, a hole) rays just
+//   past the edges of the blocks around it, and the hit nearest the
+//   look-ahead spot wins (nearest a little higher, with a block in front).
+//   A target farther than lComfort from the rest spot does not count. With
+//   no target the leg is stranded: it reaches for its look-ahead spot.
+// * Steps: a planted foot stays where it is in the world. It steps once it
+//   is outside its trigger radius (around its rest spot, from lTrigRest
+//   standing to lTrigMove at full speed) or has lost its block, unless a
+//   neighbour (lAdj) is in the air going to the ground or landed less than
+//   lCoolX ticks ago, or its diagonal partner (lDiag) set off less than
+//   lCoolS ticks ago. A foot in the air moves at lLegSpeed toward its target
+//   on an arc; when the target changes on the way, only the step's end
+//   moves (the reference starts the step again from where the foot is, but
+//   a target flipping between two blocks then keeps the foot in the air).
+// * Leash: a planted foot more than lComfort from its rest spot holds the
+//   body to lUncomf of its speed, and the body does not turn, until it steps.
+// * Support: the body's height follows the higher of its grounded targets'
+//   average and the ground under its middle.
+//
+// The state is in the gait's lists (gait.tc): per mech, per leg, gFeet (the
+// foot on its path, without the lift), gSwA (where its step started), gSwB
+// (its target), gSwT (the step's progress, -1 planted), gSwL (the step's
+// lift), and here gTgtG (1 if the target is ground), gTouch (1 if the
+// planted foot stands on a block), gBegT and gStopT (ticks since it set off
+// and since it landed).
+
+declare global gTgtG: list;
+declare global gTouch: list;
+declare global gBegT: list;
+declare global gStopT: list;
+/** The current type's legs: each one's rest spot (body frame: x left, 0, z
+ * forward, on the surface), its neighbours and its diagonal partners (leg
+ * numbers), and the order the legs are worked out in (diagonal pairs
+ * together). */
+declare global lRest: list[vec];
+declare global lAdj: list;
+declare global lDiag: list;
+declare global lOrder: list;
+/** The current type's step numbers (mechGait): trigger radius standing and
+ * moving (m), comfort radius (m), foot speed in the air (m/s), look-ahead
+ * (share of the trigger radius), cooldowns (ticks) after a neighbour lands
+ * and after the diagonal partner sets off, the body's speed share while a
+ * foot is left behind, and where along a foot its ground is looked for (m,
+ * forward of the ankle). */
+declare global lTrigRest: num;
+declare global lTrigMove: num;
+declare global lComfort: num;
+declare global lLegSpeed: num;
+declare global lLook: num;
+declare global lCoolX: num;
+declare global lCoolS: num;
+declare global lUncomf: num;
+declare global lMid: num;
+
+/** Reads the current type's legs and step numbers (loadGait, after its
+ * leg geometry). */
+function loadLegs {
+    line g = mechGait();
+    global lTrigRest = line g["trigger_rest"] as num;
+    global lTrigMove = line g["trigger_move"] as num;
+    global lComfort = line g["comfort"] as num;
+    global lLegSpeed = line g["leg_speed"] as num;
+    global lLook = line g["look_ahead"] as num;
+    global lCoolX = line g["cool_cross"] as num;
+    global lCoolS = line g["cool_same"] as num;
+    global lUncomf = line g["uncomfortable"] as num;
+    global lMid = line g["foot_mid"] as num;
+    if (global gLegs == 4) {
+        // left front, left hind, right front, right hind
+        global lRest = [];
+        for (line leg of global sLegs) {
+            global lRest.append((line leg as list)[7] as vec);
+        }
+        global lAdj = [[2, 3], [1, 4], [4, 1], [3, 2]];
+        global lDiag = [[4], [3], [2], [1]];
+        global lOrder = [1, 4, 2, 3];
+    } else {
+        global lRest = [vec(global gHip.x, 0, global gAnkle.z), vec(0 - global gHip.x, 0, global gAnkle.z)];
+        global lAdj = [[2], [1]];
+        global lDiag = [[], []];
+        global lOrder = [1, 2];
+    }
+}
+
+/** The per-leg lists for a newly spawned mech with its feet at `feet`, each
+ * planted on its block (gaitInit). */
+function legsInit(feet: list) {
+    line g = [];
+    line z = [];
+    for (line f of feet) {
+        line g.append(1);
+        line z.append(99);
+    }
+    global gTgtG.append(line g);
+    global gTouch.append(line g);
+    global gBegT.append(line z);
+    global gStopT.append(line z);
+}
+
+/** Empties the leg lists (gaitClear). */
+function legsClear {
+    global gTgtG = [];
+    global gTouch = [];
+    global gBegT = [];
+    global gStopT = [];
+}
+
+/** Every foot of mech m planted where it is now, as its own target (after a
+ * landing). */
+function legsPlant(m: num) {
+    line feet = global gFeet[m] as list;
+    line g = [];
+    line t = [];
+    line z = [];
+    for (line f of line feet) {
+        line g.append(1);
+        line t.append(-1);
+        line z.append(99);
+    }
+    global gSwB[m] = line feet;
+    global gSwA[m] = line feet;
+    global gSwT[m] = line t;
+    global gTgtG[m] = line g;
+    global gTouch[m] = line g;
+    global gBegT[m] = line z;
+    global gStopT[m] = line z;
+}
+
+/** Leg i's rest spot (world, on the surface plane) for a body at pos with up
+ * U and forward F. */
+function legRest(i: num, pos: vec, U: vec, F: vec): vec {
+    line r = global lRest[i];
+    return pos + U.cross(F) * line r.x + F * line r.z;
+}
+
+/** The distance from a to b across the surface (at right angles to U). */
+function planarDist(a: vec, b: vec, U: vec): num {
+    line d = b - a;
+    return (line d - U * line d.dot(U)).len();
+}
+
+/** How far the ground under point p is above it along U (negative below),
+ * looked for from gUp above to gDown below (under the foot's middle, lMid
+ * along F); -999 for none, or for a block already at the top of that reach. */
+function legGround(p: vec, U: vec, F: vec): num {
+    line q = p + F * global lMid;
+    if (U.y > 0.99) {
+        // straight down: block columns (cached, terrain.tc)
+        // (from a whole block height, so the column cache is reused)
+        line top0 = num.ceil(line q.y + global gUp);
+        line t = colTop(line q.x, line q.z, line top0, line top0 - line q.y + global gDown);
+        if (line t < -900 || line t >= line top0 - 0.01) {
+            return -999;
+        }
+        return line t - p.y;
+    }
+    line d = spiderRay(line q + U * global gUp, U * -1, global gUp + global gDown);
+    if (line d < 0.01) {
+        return -999;
+    }
+    return global gUp - line d;
+}
+
+/** 1 if the planted foot at `foot` still stands on its block. */
+function legHeld(foot: vec, U: vec, F: vec): num {
+    line q = foot + F * global lMid - U * 0.2;
+    line blk = game.getBlockMaterial(loc(line q.x, line q.y, line q.z), returnValue="Item");
+    if (line blk.isSolid()) {
+        return 1;
+    }
+    return 0;
+}
+
+/** Leg i's target for a body at pos (up U, forward F) with its look-ahead
+ * spot at `look`: [the ground point, 1], or [look, 0] if it is stranded. */
+function legTarget(i: num, look: vec, pos: vec, U: vec, F: vec): list {
+    line h = legGround(look, U, F);
+    if (line h > -900 && line h >= -0.3 && line h <= 1.5) {
+        return [look + U * line h, 1];
+    }
+    // just past the edges of the blocks around it, along the two block axes
+    // across the surface
+    line a1 = vec(1, 0, 0);
+    line a2 = vec(0, 0, 1);
+    if (num.abs(U.x) > 0.7) {
+        line a1 = vec(0, 1, 0);
+    } else if (num.abs(U.z) > 0.7) {
+        line a2 = vec(0, 1, 0);
+    }
+    line c1 = look.dot(line a1);
+    line c2 = look.dot(line a2);
+    line mg = 0.125;
+    line pref = look;
+    line ahead = look + F * 1 + U * 0.5;
+    line blk = game.getBlockMaterial(loc(line ahead.x, line ahead.y, line ahead.z), returnValue="Item");
+    if (line blk.isSolid()) {
+        line pref = look + U * 0.5;
+    }
+    line best = vec(0, 0, 0);
+    line bestD = 999;
+    for (line o1 of [num.floor(line c1) - line mg, line c1, num.ceil(line c1) + line mg]) {
+        for (line o2 of [num.floor(line c2) - line mg, line c2, num.ceil(line c2) + line mg]) {
+            line p = look + line a1 * ((line o1 as num) - line c1) + line a2 * ((line o2 as num) - line c2);
+            line hh = legGround(line p, U, F);
+            if (line hh > -900 && num.abs(line hh) <= global gMaxRise) {
+                line q = line p + U * line hh;
+                line d = (line q - line pref).len();
+                if (line d < line bestD) {
+                    line best = line q;
+                    line bestD = line d;
+                }
+            }
+        }
+    }
+    if (line bestD < 999 && planarDist(line best, legRest(i, pos, U, F), U) <= global lComfort) {
+        return [line best, 1];
+    }
+    return [look, 0];
+}
+
+/** How high a step from a to b lifts (m): a two-legged type clears what is
+ * in its way (swingLift), a spider lifts gLift and more for a step up or
+ * down. */
+function legLift(a: vec, b: vec, U: vec, yaw: num): num {
+    if (global gLegs == 2) {
+        line h = swingLift(a, b, yaw);
+        if (line h < 0) {
+            return global gMaxRise + global gLift;
+        }
+        return line h;
+    }
+    return global gLift + 0.5 * num.abs((b - a).dot(U));
+}
+
+/** 1 if a planted foot of mech m is more than lComfort from its rest spot
+ * (the body has to wait for it), for a body at pos (up U, forward F). */
+function legsBehind(m: num, pos: vec, U: vec, F: vec): num {
+    line feet = global gFeet[m] as list;
+    line swT = global gSwT[m] as list;
+    repeat (line i to line feet.len()) {
+        if (line swT[line i] as num < 0 && planarDist(line feet[line i] as vec, legRest(line i, pos, U, F), U) > global lComfort) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/** 1 if leg i of mech m may set off now (see the top). */
+function legMayStep(m: num, i: num, rest: vec, trig: num, U: vec): num {
+    line feet = global gFeet[m] as list;
+    line swT = global gSwT[m] as list;
+    line swB = global gSwB[m] as list;
+    line tg = global gTgtG[m] as list;
+    line touch = global gTouch[m] as list;
+    line beg = global gBegT[m] as list;
+    line stop = global gStopT[m] as list;
+    line foot = line feet[i] as vec;
+    if (((line swB[i] as vec) - line foot).len() < 0.1) {
+        return 0;
+    }
+    // stranded: it reaches for its spot
+    if (line tg[i] as num == 0) {
+        return 1;
+    }
+    for (line jj of global lAdj[i] as list) {
+        line j = line jj as num;
+        if (line tg[line j] as num == 1 && (line swT[line j] as num >= 0 || line stop[line j] as num < global lCoolX)) {
+            return 0;
+        }
+    }
+    for (line jj of global lDiag[i] as list) {
+        line j = line jj as num;
+        if (line tg[line j] as num == 1 && line beg[line j] as num < global lCoolS) {
+            return 0;
+        }
+    }
+    // it has to: outside its trigger radius, or off its block
+    if (planarDist(line foot, rest, U) <= trig && line touch[i] as num == 1) {
+        return 0;
+    }
+    // and something stands on the ground
+    repeat (line j to line feet.len()) {
+        if (line swT[line j] as num < 0 && line touch[line j] as num == 1) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/** One tick of mech m's legs for its body, now at pos (up U, forward F,
+ * heading yaw) after moving from `was` and turning by `turn` degrees about U,
+ * moving at velocity vel (m/s; full speed gMaxSpeed). Updates the feet and
+ * returns [each foot's lift (m), each step's arc (0..1), how far the support
+ * is above pos along U (-999 for none), how many feet stand on the ground]. */
+function legsTick(m: num, pos: vec, U: vec, F: vec, yaw: num, was: vec, turn: num, vel: vec): list {
+    line dt = 0.05;
+    line feet = global gFeet[m] as list;
+    line swA = global gSwA[m] as list;
+    line swB = global gSwB[m] as list;
+    line swT = global gSwT[m] as list;
+    line swL = global gSwL[m] as list;
+    line tg = global gTgtG[m] as list;
+    line touch = global gTouch[m] as list;
+    line beg = global gBegT[m] as list;
+    line stop = global gStopT[m] as list;
+    line n = line feet.len();
+    line lift = [];
+    line arcs = [];
+    repeat (line i to line n) {
+        line lift.append(0);
+        line arcs.append(0);
+        line beg[line i] = (line beg[line i] as num) + 1;
+        line stop[line i] = (line stop[line i] as num) + 1;
+    }
+    line spd = (vel - U * vel.dot(U)).len();
+    line walking = spd > 0.05 || num.abs(turn) > 0.05;
+    line trig = global lTrigRest + (global lTrigMove - global lTrigRest) * num.clamp(spd / global gMaxSpeed, 0, 1);
+    line dirv = F;
+    if (spd > 0.05) {
+        line dirv = (vel - U * vel.dot(U)).setLength(1);
+    }
+    for (line io of global lOrder) {
+        line i = line io as num;
+        line rest = legRest(line i, pos, U, F);
+        line look = line rest;
+        if (line walking) {
+            line look = line rest + line dirv * (line trig * global lLook);
+            if (turn != 0) {
+                line look = pos + rotateAbout(line look - pos, U, turn * 4);
+            }
+        }
+        // the target, looked for again every tick
+        line tr = legTarget(line i, line look, pos, U, F);
+        line target = line tr[1] as vec;
+        line moving = 0;
+        if (line swT[line i] as num >= 0) {
+            line moving = 1;
+        }
+        if (line moving == 1 && ((line swB[line i] as vec) - line target).len() > 0.05) {
+            // a new target in the air: the step goes on, only its end moves
+            // (so a target that flips between two blocks cannot keep a foot
+            // from ever landing), lifting more if it has to
+            line swL[line i] = num.max(line swL[line i] as num, legLift(line swA[line i] as vec, line target, U, yaw));
+        }
+        line swB[line i] = line target;
+        line tg[line i] = line tr[2];
+        // a foot off the ground goes along with the body
+        if (line moving == 1 || line touch[line i] as num == 0) {
+            line feet[line i] = pos + rotateAbout((line feet[line i] as vec) - was, U, turn);
+            line swA[line i] = pos + rotateAbout((line swA[line i] as vec) - was, U, turn);
+        }
+        if (line moving == 0) {
+            global gSwT[m] = line swT;
+            global gSwB[m] = line swB;
+            global gFeet[m] = line feet;
+            global gTgtG[m] = line tg;
+            global gTouch[m] = line touch;
+            global gBegT[m] = line beg;
+            global gStopT[m] = line stop;
+            if (legMayStep(m, line i, line rest, line trig, U) == 1) {
+                line moving = 1;
+                line swA[line i] = line feet[line i];
+                line swT[line i] = 0;
+                line touch[line i] = 0;
+                line beg[line i] = 0;
+                line swL[line i] = legLift(line feet[line i] as vec, line target, U, yaw);
+            }
+        }
+        if (line moving == 1) {
+            line a = line swA[line i] as vec;
+            line d = num.max(planarDist(line a, line target, U), 0.05);
+            line t = num.min(1, (line swT[line i] as num) + global lLegSpeed * line dt / line d);
+            line e = 4 * line t * (1 - line t);
+            line feet[line i] = line a + (line target - line a) * line t;
+            line lift[line i] = (line swL[line i] as num) * line e;
+            line arcs[line i] = line e;
+            if (line t >= 1) {
+                line t = -1;
+                line feet[line i] = line target;
+                line stop[line i] = 0;
+                line touch[line i] = 0;
+                if (line tg[line i] as num == 1 && legHeld(line target, U, F) == 1) {
+                    line touch[line i] = 1;
+                }
+            }
+            line swT[line i] = line t;
+        } else if (line touch[line i] as num == 1 && legHeld(line feet[line i] as vec, U, F) == 0) {
+            // its block is gone
+            line touch[line i] = 0;
+        }
+    }
+    // support: the higher of the grounded targets' average and the ground
+    // under the middle
+    line sum = 0;
+    line cnt = 0;
+    line down = 0;
+    repeat (line i to line n) {
+        if (line tg[line i] as num == 1) {
+            line sum += ((line swB[line i] as vec) - pos).dot(U);
+            line cnt += 1;
+        }
+        if (line swT[line i] as num < 0 && line touch[line i] as num == 1) {
+            line down += 1;
+        }
+    }
+    line support = -999;
+    if (line cnt > 0) {
+        line support = line sum / line cnt;
+    }
+    line g0 = legGround(pos + vel * line dt - F * global lMid, U, F);
+    if (line g0 > -900) {
+        line support = num.max(line support, line g0);
+    }
+    global gFeet[m] = line feet;
+    global gSwA[m] = line swA;
+    global gSwB[m] = line swB;
+    global gSwT[m] = line swT;
+    global gSwL[m] = line swL;
+    global gTgtG[m] = line tg;
+    global gTouch[m] = line touch;
+    global gBegT[m] = line beg;
+    global gStopT[m] = line stop;
+    return [line lift, line arcs, line support, line down];
+}

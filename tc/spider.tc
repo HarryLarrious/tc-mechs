@@ -1,0 +1,822 @@
+// The spider's walk (gaitTick hands a four-legged mech to spiderTick): four
+// legs, a body that turns to wherever its pilot looks and tilts its nose a
+// little toward their look (more range for its guns), wall climbing, and
+// high jumps.
+//
+// * Frame: a spider keeps its own up and forward (sUp, sFwd: world, unit, at
+//   right angles): the surface frame, up off whatever it stands on, floor
+//   or wall. Its body is that frame tilted nose up by sTilt about its left,
+//   turning about the hips' height. mPos is the origin on the surface under
+//   the body's middle; the body rides gBodyY off it (negative: lower, when
+//   it parks). mechBasis and mechOrigin hand the frame to the drawing, the
+//   guns and the pilot.
+// * Moving: W/S along its forward, A/D strafing, up to gMaxSpeed (a share of
+//   it, sClimbShare, on a wall); its forward turns toward the pilot's look
+//   (in the surface plane) at up to gMaxTurn. Its height follows the surface
+//   under its middle, nose and tail, riding on the highest. It stops where
+//   its collision probes would go into a block, unless a little higher or
+//   one axis of the move clears them. With no surface under it at all, it
+//   falls.
+// * Corners: running at a wall (a block ahead at the hips' height, within
+//   reach of its farthest probe that way, and one as far off well above it:
+//   a wall, not a step or stairs), it climbs onto
+//   it; running off an edge (nothing under the points ahead, and a face going
+//   down past the edge), it goes round onto that face. Either way its frame
+//   turns 90 degrees about its left while it moves onto the new surface. So
+//   it climbs a wall, goes over its top and down the far side, and climbs
+//   down cliffs. That needs its grip: the air kit, and all four legs
+//   (stat "climb"); without it a wall stops it and an edge drops it, and on
+//   a wall it lets go.
+// * Legs: a planted foot stays where it is in the world until it is gStep
+//   (gSettle standing) from its home spot, then swings to the surface under
+//   where its home spot will be when it lands, a little ahead. At most two
+//   swing at once, and never two neighbours: it trots on diagonal pairs.
+//   A planted foot that loses its block goes first. Swings get quicker the
+//   faster it runs. Each leg is solved in its own plane: the hip turns it
+//   toward its foot, the femur and tibia reach the foot with the knee up.
+// * Air: Space jumps off the surface (gJumpSpeed, carrying its speed; then
+//   it pressurizes again). In the air it rights itself, grabs a wall it flies
+//   into (with its grip) and lands on the ground below.
+//
+// Legs are numbered as mechLegs lists them: 1 left front, 2 left hind,
+// 3 right front, 4 right hind; leg 5 - i is leg i's diagonal partner.
+
+/** Per mech (every type, used by spiders): the surface frame's up and forward
+ * (world), the nose-up tilt (degrees), and the corner it is going round:
+ * [progress 0..1, where it ends up, axis, up, forward and position at the
+ * start, how long it takes (s)], or []. */
+declare global sUp: list[vec];
+declare global sFwd: list[vec];
+declare global sTilt: list[num];
+/** Per mech: how far a spider's body pitches (nose up) and rolls (left side
+ * up) toward where its feet stand (degrees). */
+declare global sPitch: list[num];
+declare global sRoll: list[num];
+/** The most a spider's body leans toward its feet (degrees). */
+declare global sLeanMax: num;
+declare global sCorner: list;
+/** The current type's legs if it has four (mechLegs): per leg [side (1 left,
+ * -1 right), yaw segment, femur segment, tibia segment, root (mech frame,
+ * the yaw joint), the foot at rest (mech frame), its home spot (x, 0, z)]. */
+declare global sLegs: list;
+/** Leg plane (the left leg's frame from its root: x out, y up): the femur
+ * joint's x and y, the femur's and tibia's lengths and their rest angles. */
+declare global sLegK: list[num];
+/** The current type's number of legs (mechGait "legs"), and a spider's
+ * climbing speed (share of gMaxSpeed), nose tilt (share of the pilot's look
+ * elevation) and its limit (degrees). */
+declare global gLegs: num;
+declare global sClimbShare: num;
+declare global sTiltShare: num;
+declare global sTiltMax: num;
+
+/** Parses the current type's four legs (loadGait). */
+function loadSpiderLegs {
+    global sLegs = [];
+    for (line row of mechLegs()) {
+        line w = (line row as str).split(" ");
+        line ys = mechJointSeg(line w[3] as str);
+        line root = (global mSeg[line ys] as list)[5] as vec;
+        line rest = vec(num.parse(line w[6] as str), num.parse(line w[7] as str), num.parse(line w[8] as str));
+        line home = vec(num.parse(line w[9] as str), 0, num.parse(line w[10] as str));
+        global sLegs.append([num.parse(line w[2] as str), line ys, mechJointSeg(line w[4] as str), mechJointSeg(line w[5] as str), line root, line rest, line home]);
+    }
+    line first = global sLegs[1] as list;
+    line sd = line first[1] as num;
+    line root = line first[5] as vec;
+    line fp = (global mSeg[line first[3] as num] as list)[5] as vec;
+    line kp = (global mSeg[line first[4] as num] as list)[5] as vec;
+    line rest = line first[6] as vec;
+    line hx = line sd * (line fp.x - line root.x);
+    line hy = line fp.y - line root.y;
+    line kx = line sd * (line kp.x - line root.x);
+    line ky = line kp.y - line root.y;
+    line fx = line sd * (line rest.x - line root.x);
+    line fy = line rest.y - line root.y;
+    line lenA = ((line kx - line hx) * (line kx - line hx) + (line ky - line hy) * (line ky - line hy)) ** 0.5;
+    line lenB = ((line fx - line kx) * (line fx - line kx) + (line fy - line ky) * (line fy - line ky)) ** 0.5;
+    global sLegK = [line hx, line hy, line lenA, line lenB, angYZ(line kx - line hx, line ky - line hy), angYZ(line fx - line kx, line fy - line ky)];
+}
+
+/** Body axes [left, up, forward] (world) for a surface frame (up U, forward
+ * F) tilted nose up by t degrees (and rolled by r). */
+function spiderFrameOf(U: vec, F: vec, t: num, r: num = 0): list {
+    line f2 = F * num.cos(t) + U * num.sin(t);
+    line u2 = U * num.cos(t) - F * num.sin(t);
+    line l2 = line u2.cross(line f2);
+    // and rolled by r degrees about the forward, the left side up
+    line l3 = line l2 * num.cos(r) + line u2 * num.sin(r);
+    line u3 = line u2 * num.cos(r) - line l2 * num.sin(r);
+    return [line l3, line u3, line f2];
+}
+
+/** Mech m's body axes (world). */
+function spiderFrame(m: num): list {
+    return spiderFrameOf(global sUp[m], global sFwd[m], global sTilt[m] + global sPitch[m], global sRoll[m]);
+}
+
+/** The frame origin (world) of a spider body with axes W standing at pos on
+ * a surface with up U, bodyY off it: the tilt turns it about the hips. */
+function spiderOriginAt(pos: vec, U: vec, W: list, bodyY: num): vec {
+    line rh = ((global sLegs[1] as list)[5] as vec).y;
+    return pos + U * (bodyY + line rh) - (W[2] as vec) * line rh;
+}
+
+/** Mech m's frame origin (world). */
+function spiderOrigin(m: num): vec {
+    return spiderOriginAt(global mPos[m], global sUp[m], spiderFrame(m), global gBodyY[m]);
+}
+
+/** Mech m's axes [left, up, forward] (world): a spider's body frame, else
+ * its heading. */
+function mechBasis(m: num): list {
+    if (global gLegs == 4) {
+        return spiderFrame(m);
+    }
+    line yaw = global mYaw[m];
+    line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
+    line U = vec(0, 1, 0);
+    return [line U.cross(line F), line U, line F];
+}
+
+/** Mech m's frame origin (world): the ground point plus its body height. */
+function mechOrigin(m: num): vec {
+    if (global gLegs == 4) {
+        return spiderOrigin(m);
+    }
+    return global mPos[m] + vec(0, global gBodyY[m], 0);
+}
+
+/** Distance from `from` along the unit vector d to the first solid block
+ * within len, or -1. */
+function spiderRay(from: vec, d: vec, len: num): num {
+    line hit = game.raycast(loc(from.x, from.y, from.z).setDirection(d), len, blockCollision="Solid blocks");
+    line dist = (vec(line hit.x, line hit.y, line hit.z) - from).len();
+    if (line dist < len - 0.01) {
+        return line dist;
+    }
+    return -1;
+}
+
+/** The surface under point p along -U: how far it is above p (along U;
+ * negative below), looked for from gUp above p to gDown below it. -999 if
+ * there is none, 999 if a block is already at the top of that reach (a
+ * wall). */
+function spiderGround(p: vec, U: vec): num {
+    line d = spiderRay(p + U * global gUp, U * -1, global gUp + global gDown);
+    if (line d < 0) {
+        return -999;
+    }
+    if (line d < 0.01) {
+        return 999;
+    }
+    return global gUp - line d;
+}
+
+/** 1 if the foot at `foot` (on a surface with up U) still has its block. */
+function spiderFootHeld(foot: vec, U: vec): num {
+    line p = foot - U * 0.2;
+    line blk = game.getBlockMaterial(loc(line p.x, line p.y, line p.z), returnValue="Item");
+    if (line blk.isSolid()) {
+        return 1;
+    }
+    return 0;
+}
+
+/** 1 if no collision probe is in a solid block for a body with axes W and
+ * its origin at O. */
+function spiderProbesClear(W: list, O: vec): num {
+    for (line pr of global tProbes) {
+        line v = (line pr as list)[2] as vec;
+        line p = O + (W[1] as vec) * line v.x + (W[2] as vec) * line v.y + (W[3] as vec) * line v.z;
+        line blk = game.getBlockMaterial(loc(line p.x, line p.y, line p.z), returnValue="Item");
+        if (line blk.isSolid()) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/** Leg i's home spot (world, on the surface plane) for a body standing at
+ * pos (up U, forward F), moved by `lead`. */
+function spiderHome(i: num, pos: vec, U: vec, F: vec, lead: vec): vec {
+    line h = (global sLegs[i] as list)[7] as vec;
+    return pos + U.cross(F) * line h.x + F * line h.z + lead;
+}
+
+/** Where leg i's foot (now at a) lands for a body at pos (up U, forward F)
+ * moved by lead: the surface under its home spot, or under a spot nearer the
+ * foot; [the point] or [] if there is none within gMaxRise. */
+function spiderFoothold(i: num, a: vec, pos: vec, U: vec, F: vec, lead: vec): list {
+    line h = spiderHome(i, pos, U, F, lead);
+    for (line frac of [1, 0.7, 0.4]) {
+        line p = a + (line h - a) * (line frac as num);
+        line p = line p - U * (line p - pos).dot(U);
+        line g = spiderGround(line p, U);
+        if (line g > -900 && line g < 900 && num.abs(line g) <= global gMaxRise) {
+            return [line p + U * line g];
+        }
+    }
+    return [];
+}
+
+/** Leg i's joints in `joints` set so its foot is at `foot` (world), for a
+ * body with axes W and its origin at O. */
+function spiderLegIK(joints: list, i: num, foot: vec, W: list, O: vec): list {
+    line leg = global sLegs[i] as list;
+    line sd = line leg[1] as num;
+    line root = line leg[5] as vec;
+    line d = foot - O;
+    line dx = line d.dot(W[1] as vec) - line root.x;
+    line dy = line d.dot(W[2] as vec) - line root.y;
+    line dz = line d.dot(W[3] as vec) - line root.z;
+    // the hip turns the leg's plane toward the foot
+    line out = (line dx * line dx + line dz * line dz) ** 0.5;
+    line yaw = angYZ(line sd * line dx, 0 - line sd * line dz);
+    // femur and tibia reach it in that plane, the knee up
+    line k = global sLegK;
+    line tx = line out - line k[1];
+    line ty = line dy - line k[2];
+    line lenA = line k[3];
+    line lenB = line k[4];
+    line r = num.clamp((line tx * line tx + line ty * line ty) ** 0.5, num.abs(line lenA - line lenB) + 0.01, line lenA + line lenB - 0.01);
+    line alpha = num.cos(num.clamp((line lenA * line lenA + line r * line r - line lenB * line lenB) / (2 * line lenA * line r), -1, 1), variant="Inverse cosine (arccosine)");
+    line fa = angYZ(line tx, line ty) + line alpha;
+    line kx = line k[1] + line lenA * num.cos(line fa);
+    line ky = line k[2] + line lenA * num.sin(line fa);
+    line fb = angYZ(line out - line kx, line dy - line ky);
+    line fem = wrapDeg(line fa - line k[5]);
+    line tib = wrapDeg(line fb - line k[6] - line fem);
+    joints = setJoint(joints, line leg[2] as num, line yaw);
+    joints = setJoint(joints, line leg[3] as num, line sd * line fem);
+    joints = setJoint(joints, line leg[4] as num, line sd * line tib);
+    return joints;
+}
+
+/** Mech m's legs posed to its feet (gaitInit). */
+function spiderPoseLegs(m: num) {
+    line W = spiderFrame(m);
+    line O = spiderOrigin(m);
+    line joints = global mJoint[m] as list;
+    line feet = global gFeet[m] as list;
+    repeat (line i to 4) {
+        line joints = spiderLegIK(line joints, line i, line feet[line i] as vec, line W, line O);
+    }
+    global mJoint[m] = line joints;
+}
+
+/** Each of mech m's feet on the surface under its home spot (or at the home
+ * spot, if there is none), planted. */
+function spiderPlantFeet(m: num) {
+    line pos = global mPos[m];
+    line U = global sUp[m];
+    line F = global sFwd[m];
+    line feet = [];
+    repeat (line i to 4) {
+        line h = spiderHome(line i, line pos, line U, line F, vec(0, 0, 0));
+        line fh = spiderFoothold(line i, line h, line pos, line U, line F, vec(0, 0, 0));
+        if (line fh.len() == 1) {
+            line feet.append(line fh[1]);
+        } else {
+            line feet.append(line h);
+        }
+    }
+    global gFeet[m] = line feet;
+    global gSwT[m] = [-1, -1, -1, -1];
+    legsPlant(m);
+}
+
+/** A corner ahead of a spider at pos (up U, forward F) moving at `speed`
+ * (forward, or back if negative): a wall to climb onto, or an edge to go
+ * round. [0, where it ends up, axis, U, F, pos, how long it takes], or []. */
+function spiderCornerAhead(pos: vec, U: vec, F: vec, speed: num): list {
+    line rh = ((global sLegs[1] as list)[5] as vec).y;
+    // it looks for a wall a little past its farthest probe that way (the
+    // cannon's muzzle ahead, the tail behind), so the wall is found before a
+    // probe hits it
+    line front = 0;
+    line back = 0;
+    for (line pr of global tProbes) {
+        line pz = ((line pr as list)[2] as vec).z;
+        line front = num.max(line front, line pz);
+        line back = num.max(line back, 0 - line pz);
+    }
+    line dv = F;
+    line reach = line front + 0.6;
+    if (speed < 0) {
+        line dv = F * -1;
+        line reach = line back + 0.6;
+    }
+    line secs = num.max(0.25, 4.5 / num.max(num.abs(speed), 3));
+    // a wall: a block ahead at the hips' height, and one as far off well above it
+    line c = pos + U * line rh;
+    line dw = spiderRay(line c, line dv, line reach);
+    if (line dw >= 0) {
+        line dh = spiderRay(line c + U * 1.6, line dv, line reach + 0.6);
+        if (line dh >= 0 && num.abs(line dh - line dw) < 0.6) {
+            // onto the wall, high enough for the tail to clear the ground
+            // below and still under the wall's top (it is at least 2.8 high)
+            line h = 2.6;
+            if (spiderRay(pos + U * 3.1, line dv, line dw + 0.5) >= 0) {
+                line h = 3.1;
+            }
+            return [0, pos + line dv * line dw + U * line h, line dv.cross(U).setLength(1), U, F, pos, line secs];
+        }
+        return [];
+    }
+    // an edge: nothing under the points ahead, and a face going down past it
+    if (spiderGround(pos + line dv * 1.2, U) == -999 && spiderGround(pos + line dv * 2.4, U) == -999) {
+        line de = 0.3;
+        if (spiderGround(pos + line dv * 0.6, U) > -900) {
+            line de = 0.9;
+        }
+        if (spiderRay(pos + line dv * (line de + 0.7) - U * 0.8, line dv * -1, 1.2) >= 0) {
+            // onto the new surface as far past the edge as it reaches (the top
+            // of a thin wall is only a block deep)
+            line edge = pos + line dv * line de;
+            line inset = 0.5;
+            for (line k of [1.5, 1]) {
+                if (line inset == 0.5 && spiderGround(line edge - U * (line k as num), line dv) > -900) {
+                    line inset = line k as num;
+                }
+            }
+            return [0, line edge - U * line inset, U.cross(line dv).setLength(1), U, F, pos, line secs];
+        }
+    }
+    return [];
+}
+
+/** Mech m lets go of what it stands on and flies at velocity v (world). */
+function spiderLetGo(m: num, v: vec) {
+    global gFalling[m] = 1;
+    global gJumpV[m] = v;
+    global gVy[m] = v.y;
+    global sCorner[m] = [];
+    global gSwT[m] = [-1, -1, -1, -1];
+    global gWalking[m] = 1;
+}
+
+/** Mech m jumps (mechLeap): up off its surface at gJumpSpeed (less with
+ * damaged legs), carrying its speed; off a wall, away from it and up. Then it
+ * has to pressurize again. */
+function spiderLeap(m: num) {
+    line U = global sUp[m];
+    line F = global sFwd[m];
+    line j = global gJumpSpeed * (0.4 + 0.6 * stat(m, "mob"));
+    line v = line U * line j + line F * global gSpeed[m] + line U.cross(line F) * global gSide[m];
+    if (line U.y < 0.7) {
+        line v = line v + vec(0, line j * 0.5, 0);
+    }
+    global gPress[m] = num.ceil(global gJumpCool * 20);
+    spiderLetGo(m, line v);
+    line p = global mPos[m];
+    allPlayers.playSound(snd("Piston Extend", 2, 0.5), loc(line p.x, line p.y + 1, line p.z));
+    allPlayers.playSound(snd("Firework Launch", 2, 0.6), loc(line p.x, line p.y + 1, line p.z));
+    for (line f of global gFeet[m] as list) {
+        line fv = line f as vec;
+        allPlayers.displayParticleEffect(par("Cloud"), loc(line fv.x, line fv.y + 0.2, line fv.z));
+    }
+}
+
+/** Mech m lands at pos with velocity v: upright, its feet planted, its speed
+ * carried on. */
+function spiderLand(m: num, pos: vec, v: vec) {
+    line fw = global sFwd[m];
+    line F = vec(line fw.x, 0, line fw.z);
+    if (line F.len() < 0.1) {
+        line yaw = global mYaw[m];
+        line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
+    }
+    line F = line F.setLength(1);
+    line U = vec(0, 1, 0);
+    global mPos[m] = pos;
+    global sUp[m] = line U;
+    global sFwd[m] = line F;
+    global gFalling[m] = 0;
+    global gVy[m] = 0;
+    global gJumpV[m] = vec(0, 0, 0);
+    global gSpeed[m] = v.dot(line F);
+    global gSide[m] = v.dot(line U.cross(line F));
+    global gDip[m] = global gLandDip * num.min(1, (0 - v.y) / 10);
+    spiderPlantFeet(m);
+    mechLanded(m, num.max(0, 0 - v.y));
+}
+
+/** Mech m grabs the wall it flew into at `at` (world, at its hips' height),
+ * flying horizontally along hd: up off the wall, forward straight up. */
+function spiderGrab(m: num, at: vec, hd: vec) {
+    // the wall's face: the axis it was flown into most
+    line n = vec(0, 0, -1);
+    if (hd.z < 0) {
+        line n = vec(0, 0, 1);
+    }
+    if (num.abs(hd.x) > num.abs(hd.z)) {
+        line n = vec(-1, 0, 0);
+        if (hd.x < 0) {
+            line n = vec(1, 0, 0);
+        }
+    }
+    global mPos[m] = at;
+    global sUp[m] = line n;
+    global sFwd[m] = vec(0, 1, 0);
+    global gFalling[m] = 0;
+    global gVy[m] = 0;
+    global gJumpV[m] = vec(0, 0, 0);
+    global gSpeed[m] = 0;
+    global gSide[m] = 0;
+    spiderPlantFeet(m);
+    allPlayers.playSound(snd("Anvil Land", 0.6, 1.4), loc(at.x, at.y, at.z));
+}
+
+/** One tick of mech m in the air: it falls (carrying on at its speed until
+ * something is in the way), rights itself with its legs hanging, grabs a wall
+ * it flies into (with its grip) and lands on the ground below. */
+function spiderFall(m: num) {
+    line dt = 0.05;
+    line pos = global mPos[m];
+    line U = global sUp[m];
+    line F = global sFwd[m];
+    line rh = ((global sLegs[1] as list)[5] as vec).y;
+    line v = global gJumpV[m] - vec(0, global gGravity * line dt, 0);
+    if (line v.y < 0 - global gMaxFall) {
+        line v = vec(line v.x, 0 - global gMaxFall, line v.z);
+    }
+    // it rights itself
+    line up = vec(0, 1, 0);
+    line ax = line U.cross(line up);
+    if (line ax.len() > 0.001) {
+        line ang = num.min(angYZ(line U.dot(line up), line ax.len()), 360 * line dt);
+        line ax = line ax.setLength(1);
+        line U = rotateAbout(line U, line ax, line ang).setLength(1);
+        line F = rotateAbout(line F, line ax, line ang).setLength(1);
+    }
+    global sUp[m] = line U;
+    global sFwd[m] = line F;
+    // flying into a wall: it grabs it, or stops against it
+    line hv = vec(line v.x, 0, line v.z);
+    if (line hv.len() > 0.3) {
+        line hd = line hv.setLength(1);
+        line c = line pos + vec(0, line rh, 0);
+        line dw = spiderRay(line c, line hd, line hv.len() * line dt + 2);
+        if (line dw >= 0) {
+            // (a wall, not a step; and high enough that its tail clears the ground)
+            if (stat(m, "climb") == 1 && spiderRay(line c + vec(0, 1.5, 0), line hd, line dw + 0.8) >= 0 && spiderRay(line c, vec(0, -1, 0), 2.8) < 0) {
+                spiderGrab(m, line c + line hd * line dw, line hd);
+                return;
+            }
+            line v = vec(0, line v.y, 0);
+        }
+    }
+    // a ceiling stops it rising
+    if (line v.y > 0 && spiderRay(line pos + vec(0, line rh + 1, 0), line up, line v.y * line dt + 0.6) >= 0) {
+        line v = vec(line v.x, 0, line v.z);
+    }
+    // the ground below, within this tick's fall: it lands
+    if (line v.y <= 0) {
+        line g = spiderRay(line pos + vec(0, 1, 0), vec(0, -1, 0), 1 + (0 - line v.y) * line dt + 0.05);
+        if (line g >= 0) {
+            spiderLand(m, line pos + vec(0, 1 - line g, 0), line v);
+            spiderPoseLegs(m);
+            return;
+        }
+    }
+    line pos = line pos + line v * line dt;
+    global mPos[m] = line pos;
+    global gJumpV[m] = line v;
+    global gVy[m] = line v.y;
+    global gSpeed[m] = line hv.dot(line F);
+    // the legs hang, the feet a little under the body's plane at their homes
+    line feet = [];
+    repeat (line i to 4) {
+        line feet.append(spiderHome(line i, line pos, line U, line F, line U * 0.3));
+    }
+    global gFeet[m] = line feet;
+    spiderPoseLegs(m);
+}
+
+/** 1 every half second while idle if a foot of spider m lost its block
+ * (gaitNeedsWake). */
+function spiderNeedsWake(m: num): num {
+    for (line f of global gFeet[m] as list) {
+        if (spiderFootHeld(line f as vec, global sUp[m]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/** Spider m's guns in `joints` turned toward the look (world) within their
+ * arcs, for a body with axes W; level with nothing to aim at. */
+function spiderGuns(m: num, joints: list, look: vec, W: list, aiming: num): list {
+    line dt = 0.05;
+    line lx = look.dot(W[1] as vec);
+    line ly = look.dot(W[2] as vec);
+    line lz = look.dot(W[3] as vec);
+    line travTo = 0;
+    line elevTo = 0;
+    if (aiming == 1) {
+        line travTo = angYZ(line lz, line lx);
+        line elevTo = 0 - angYZ((line lx * line lx + line lz * line lz) ** 0.5, line ly);
+    }
+    for (line g of global wGuns) {
+        line gl = line g as list;
+        line rate = gunTurnRate(0) * line dt;
+        if (line gl[1] as num == 1) {
+            line mount = line gl[6] as str;
+            line rate = gunTurnRate(1) * line dt * (0.3 + 0.7 * partFrac(m, line mount)) * (1 - partBroken(m, line mount));
+        }
+        line ts = line gl[5] as num;
+        line es = line gl[2] as num;
+        joints = setJoint(joints, line ts, approach(joints[line ts] as num, line travTo, line rate));
+        joints = setJoint(joints, line es, approach(joints[line es] as num, line elevTo, line rate));
+    }
+    return joints;
+}
+
+/** One 20th of a second of spider m's walk (gaitTick, after boarding, the
+ * hatch and whether to park: kneelTo 1 parks it). */
+function spiderTick(m: num, kneelTo: num) {
+    if (global gFalling[m] == 1) {
+        global gKneel[m] = 0;
+        spiderFall(m);
+        if (global mPilot[m] != "" && global mBoard[m] == 0) {
+            pilotHud(m, global mYaw[m]);
+        }
+        global gIdle[m] = 0;
+        return;
+    }
+    line dt = 0.05;
+    line pos = global mPos[m];
+    line U = global sUp[m];
+    line F = global sFwd[m];
+    line grip = stat(m, "climb");
+    line onWall = line U.y < 0.7;
+    // a wall without its grip: it lets go
+    if (line onWall && line grip == 0) {
+        spiderLetGo(m, vec(0, 0, 0));
+        return;
+    }
+
+    // the pilot's keys and look, or the player it follows
+    line piloted = 0;
+    line aiming = 0;
+    line look = line F;
+    line want = vec(0, 0, 0);
+    if (global mPilot[m] != "" && global mBoard[m] == 0) {
+        line inp = pilotInput(m);
+        if (line inp.len() == 2) {
+            line piloted = 1;
+            line aiming = 1;
+            line ly = line inp[1] as num;
+            line lp = line inp[2] as num;
+            line look = vec(0 - num.sin(line ly) * num.cos(line lp), 0 - num.sin(line lp), num.cos(line ly) * num.cos(line lp));
+            line want = line look;
+        }
+    }
+    line follow = global gFollow[m];
+    if (line follow != "") {
+        select playersByName(line follow);
+        if (game.selectionSize > 0) {
+            line pl = selected.location;
+            select reset;
+            line dv = vec(line pl.x, line pl.y + 1.6, line pl.z) - (line pos + line U * 1.5);
+            line look = line dv.setLength(1);
+            line want = line look;
+            line aiming = 1;
+            global gWantSpeed[m] = global gMaxSpeed * 0.6 * num.clamp((line dv.len() - 8) / 8, 0, 1);
+        } else {
+            select reset;
+            global gFollow[m] = "";
+            global gWantSpeed[m] = 0;
+            global gWantTurn[m] = 0;
+        }
+    }
+
+    // speeds ease toward what was asked: slower on a wall, slower with
+    // damaged legs, none while it parks
+    line mob = stat(m, "mob");
+    line wantS = global gWantSpeed[m] * line mob;
+    line wantSd = global gWantSide[m] * line mob;
+    if (line onWall) {
+        line wantS = line wantS * global sClimbShare;
+        line wantSd = line wantSd * global sClimbShare;
+    }
+    line parking = kneelTo == 1 || global gKneel[m] > 0;
+    if (line parking) {
+        line wantS = 0;
+        line wantSd = 0;
+    }
+    // a foot left far behind holds the body back, and it does not turn
+    line behind = legsBehind(m, line pos, line U, line F);
+    if (line behind == 1) {
+        line wantS = line wantS * global lUncomf;
+        line wantSd = line wantSd * global lUncomf;
+    }
+    line was = line pos;
+    line speed = approach(global gSpeed[m], line wantS, global gAccel * line dt);
+    line strafe = approach(global gSide[m], line wantSd, global gAccel * line dt);
+
+    // turning: its forward toward where it is wanted to go (the look), in the
+    // surface plane; or at the commanded turn rate (+ right)
+    line turn = 0;
+    if (!line parking && line behind == 0) {
+        if (line want.len() > 0.01) {
+            line wp = line want - line U * line want.dot(line U);
+            if (line wp.len() > 0.15) {
+                line wp = line wp.setLength(1);
+                line ang = angYZ(line F.dot(line wp), line U.cross(line F).dot(line wp));
+                line lim = global gMaxTurn * line dt * num.max(line mob, 0.3);
+                line turn = num.clamp(line ang, 0 - line lim, line lim);
+            }
+        } else {
+            line turn = 0 - num.clamp(global gWantTurn[m], 0 - global gMaxTurn, global gMaxTurn) * line dt * line mob;
+        }
+    }
+    if (line turn != 0) {
+        line F = rotateAbout(line F, line U, line turn).setLength(1);
+    }
+
+    // a corner: climbing onto a wall or round an edge, the frame turning 90
+    // degrees while it moves onto the new surface
+    line corner = global sCorner[m] as list;
+    if (line corner.len() == 0 && line grip == 1 && !line parking && num.abs(line speed) > 0.5) {
+        line corner = spiderCornerAhead(line pos, line U, line F, line speed);
+    }
+    line bodyY = global gBodyY[m];
+    line tilt = global sTilt[m];
+    line moving = 0;
+    if (num.abs(line speed) > 0.05 || num.abs(line strafe) > 0.05 || num.abs(line turn) > 0.01) {
+        line moving = 1;
+    }
+    if (line corner.len() > 0) {
+        line moving = 1;
+        line ct = num.min(1, (line corner[1] as num) + line dt / (line corner[7] as num));
+        line e = ease(line ct);
+        line ax = line corner[3] as vec;
+        line U = rotateAbout(line corner[4] as vec, line ax, 90 * line e).setLength(1);
+        line F = rotateAbout(line corner[5] as vec, line ax, 90 * line e).setLength(1);
+        line p0 = line corner[6] as vec;
+        line pos = line p0 + ((line corner[2] as vec) - line p0) * line e;
+        line corner[1] = line ct;
+        if (line ct >= 1) {
+            line corner = [];
+        }
+    } else {
+        // moving on the surface: its height follows the highest surface under
+        // its middle, nose and tail; nothing under any of them, it falls
+        line L = line U.cross(line F);
+        line np = line pos + (line F * line speed + line L * line strafe) * line dt;
+        line top = -999;
+        line any = 0;
+        for (line k of [0, 2.6, -1.8]) {
+            line g = spiderGround(line np + line F * (line k as num), line U);
+            if (line g > -900) {
+                line any = 1;
+                if (line g < 900) {
+                    line top = num.max(line top, line g);
+                }
+            }
+        }
+        if (line any == 0) {
+            spiderLetGo(m, (line F * line speed + line L * line strafe));
+            global sUp[m] = line U;
+            global sFwd[m] = line F;
+            return;
+        }
+        if (line top < -900) {
+            line top = 0;
+        }
+        line rate = (global gClimb + num.abs(line speed)) * line dt;
+        line np = line np + line U * num.clamp(line top, 0 - line rate, line rate);
+        // clear of its probes there, or a little higher; else along one axis
+        // of the move; else it stops
+        line W = spiderFrameOf(line U, line F, line tilt);
+        line done = 0;
+        line tries = [[line np, 1, 1], [line np + line U * 0.5, 1, 1], [line np + line U * 1, 1, 1], [line pos + line F * (line speed * line dt), 1, 0], [line pos + line L * (line strafe * line dt), 0, 1]];
+        for (line tr of line tries) {
+            line tl = line tr as list;
+            if (line done == 0 && spiderProbesClear(line W, spiderOriginAt(line tl[1] as vec, line U, line W, line bodyY)) == 1) {
+                line done = 1;
+                line pos = line tl[1] as vec;
+                line speed = line speed * (line tl[2] as num);
+                line strafe = line strafe * (line tl[3] as num);
+            }
+        }
+        if (line done == 0) {
+            if (spiderProbesClear(line W, spiderOriginAt(line pos, line U, line W, line bodyY)) == 0) {
+                // already in a block: it may move out
+                line pos = line np;
+            } else {
+                line speed = 0;
+                line strafe = 0;
+            }
+        }
+    }
+    global sCorner[m] = line corner;
+    line L = line U.cross(line F);
+
+    // the nose tilts toward the pilot's look (up off the surface)
+    line tiltTo = 0;
+    if (line piloted == 1 && !line parking) {
+        line ld = num.clamp(line look.dot(line U), -1, 1);
+        line tiltTo = num.clamp(angYZ((1 - line ld * line ld) ** 0.5, line ld) * global sTiltShare, 0 - global sTiltMax, global sTiltMax);
+    }
+    line tilt = approach(line tilt, line tiltTo, 45 * line dt);
+
+    // the legs (legs.tc): each finds its ground and steps when it has to
+    line vel = line F * line speed + line L * line strafe;
+    line lt = legsTick(m, line pos, line U, line F, global mYaw[m], line was, line turn, line vel);
+    line lift = line lt[1] as list;
+    line feet = global gFeet[m] as list;
+    line swT = global gSwT[m] as list;
+    line swB = global gSwB[m] as list;
+
+    // the body leans toward where its feet stand: nose up to the front feet,
+    // left side up to the left ones
+    line fv = ((line swB[1] as vec) + (line swB[3] as vec) - (line swB[2] as vec) - (line swB[4] as vec)) * 0.5;
+    line lv = ((line swB[1] as vec) + (line swB[2] as vec) - (line swB[3] as vec) - (line swB[4] as vec)) * 0.5;
+    line pitchTo = num.clamp(angYZ(line fv.dot(line F), line fv.dot(line U)), 0 - global sLeanMax, global sLeanMax);
+    line rollTo = num.clamp(angYZ(line lv.dot(line L), line lv.dot(line U)), 0 - global sLeanMax, global sLeanMax);
+    line pitch = global sPitch[m] + (line pitchTo - global sPitch[m]) * 0.3;
+    line roll = global sRoll[m] + (line rollTo - global sRoll[m]) * 0.3;
+
+    // park: once it stands still with every foot down it crouches gKneelDrop
+    line k = global gKneel[m];
+    if (kneelTo == 1) {
+        line down = 1;
+        repeat (line i to 4) {
+            if (line swT[line i] as num >= 0) {
+                line down = 0;
+            }
+        }
+        if (line speed == 0 && line strafe == 0 && line down == 1) {
+            line k = approach(line k, 1, line dt / global gKneelTime);
+        }
+    } else {
+        line k = approach(line k, 0, line dt / global gKneelTime);
+    }
+    global gKneel[m] = line k;
+    global gDip[m] = approach(global gDip[m], 0, global gDipRate * line dt);
+    line bodyY = 0 - global gCrouch - global gKneelDrop * ease(line k) - global gDip[m];
+
+    // legs to the feet (lifted in the air), guns to the look
+    line W = spiderFrameOf(line U, line F, line tilt + line pitch, line roll);
+    line O = spiderOriginAt(line pos, line U, line W, line bodyY);
+    line joints = global mJoint[m] as list;
+    repeat (line i to 4) {
+        line joints = spiderLegIK(line joints, line i, (line feet[line i] as vec) + line U * (line lift[line i] as num), line W, line O);
+    }
+    line joints = spiderGuns(m, line joints, line look, line W, line aiming);
+
+    // keep it all; the heading (for the HUD and the pilot's spots) is the
+    // forward's, while that is not straight up or down
+    if (num.abs(line F.y) < 0.95) {
+        global mYaw[m] = angYZ(line F.z, 0 - line F.x);
+    }
+    global gAim[m] = global mYaw[m];
+    global mPos[m] = line pos;
+    global sUp[m] = line U;
+    global sFwd[m] = line F;
+    global sTilt[m] = line tilt;
+    global sPitch[m] = line pitch;
+    global sRoll[m] = line roll;
+    global gSpeed[m] = line speed;
+    global gSide[m] = line strafe;
+    global gTurn[m] = line turn / line dt;
+    global gBodyY[m] = line bodyY;
+    global mJoint[m] = line joints;
+
+    // standing still with nothing left to do for a second: it stops walking
+    // and redrawing (its feet are still checked every half second)
+    line still = 0;
+    if (line speed == 0 && line strafe == 0 && line turn == 0 && line corner.len() == 0 && global gWantSpeed[m] == 0 && global gWantTurn[m] == 0 && line follow == "" && global mPilot[m] == "") {
+        line gunsLevel = 1;
+        for (line g of global wGuns) {
+            line gl = line g as list;
+            if (line joints[line gl[2] as num] as num != 0 || line joints[line gl[5] as num] as num != 0) {
+                line gunsLevel = 0;
+            }
+        }
+        line down = 1;
+        repeat (line i to 4) {
+            if (line swT[line i] as num >= 0) {
+                line down = 0;
+            }
+        }
+        if (line down == 1 && global gDip[m] == 0 && line k == kneelTo && line tilt == 0 && num.abs(line pitch - line pitchTo) < 0.1 && num.abs(line roll - line rollTo) < 0.1 && global mHatch[m] == global mHatchTo[m] && global mBoard[m] == 0 && line gunsLevel == 1) {
+            line still = 1;
+        }
+    }
+    if (line still == 1) {
+        global gIdle[m] += 1;
+        if (global gIdle[m] > 20) {
+            global gWalking[m] = 0;
+            global gIdle[m] = 0;
+        }
+    } else {
+        global gIdle[m] = 0;
+    }
+    if (line piloted == 1) {
+        pilotHud(m, global mYaw[m]);
+    }
+}

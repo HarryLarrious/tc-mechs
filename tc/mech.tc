@@ -28,6 +28,8 @@
 // matrix too.
 //
 // The roof hatch ("hinge_x") turns about its hinge's X by mHatch (pilot.tc).
+// A type with a "lid" joint (the spider: canopy, rear hull and gun mount)
+// opens that joint with the hatch instead (gait.tc).
 //
 // Mech types: every mech has a type (mType: 1 the walker, 2 the sprinter;
 // mechTypeNames), each with its own generated data (mech_data.tc,
@@ -65,9 +67,9 @@ declare global mAccent: list[num];
 declare global mechCount: num;
 /** Per mech: its type (index into mechTypeNames). */
 declare global mType: list[num];
-/** The current type (whose data the parsed globals hold), and each type's
- * parsed data by "t<type>" (see saveType), with the data version and stamp
- * they were parsed from. */
+/** The current type (whose data the parsed globals hold), 1 by "t<type>"
+ * for each type whose parsed data is kept (saveType), and the data version
+ * and stamp it was parsed from. */
 declare global curType: num;
 declare global tCache: dict;
 declare global tCacheVer: num;
@@ -86,7 +88,7 @@ declare global mPartGroup: list[num];
 /** The parsed data's shape (bumped when it changes, since globals outlive a
  * code update; changes to the data itself change mechDataStamp). */
 function mechDataVersion(): num {
-    return 13;
+    return 18;
 }
 
 /** Makes type t current: the parsed globals hold its data. */
@@ -103,14 +105,15 @@ function useType(t: num) {
     global curType = t;
     line key = "t%var(t)";
     if (global tCache.hasKeys(line key)) {
-        restoreType(global tCache[line key] as dict);
+        restoreType(t);
         return;
     }
     loadMechData();
     loadDamage();
     loadWeapons();
     loadGait();
-    global tCache[line key] = saveType();
+    saveType(t);
+    global tCache[line key] = 1;
 }
 
 /** Makes mech m's type current. */
@@ -118,94 +121,164 @@ function useMech(m: num) {
     useType(global mType[m]);
 }
 
-/** The current type's parsed data, as a dict. */
-function saveType(): dict {
-    line d = {};
-    line d["mSeg"] = global mSeg;
-    line d["mPart"] = global mPart;
-    line d["mGroup"] = global mGroup;
-    line d["mPartGroup"] = global mPartGroup;
-    line d["mDmg"] = global mDmg;
-    line d["mPartIdx"] = global mPartIdx;
-    line d["wGuns"] = global wGuns;
-    line d["pPath"] = global pPath;
-    line d["pExit"] = global pExit;
-    line d["tProbes"] = global tProbes;
-    line d["tFootSamples"] = global tFootSamples;
-    line d["gSegs"] = global gSegs;
-    line d["gKneelJ"] = global gKneelJ;
-    line d["gRoll"] = global gRoll;
-    line d["gKneelAnk"] = global gKneelAnk;
-    line d["gKneelPitch"] = global gKneelPitch;
-    line d["gKneelLift"] = global gKneelLift;
-    line d["gHip"] = global gHip;
-    line d["gAnkle"] = global gAnkle;
-    line n = [global gL1, global gL2, global gT0a, global gPhi0, global gBend, global gCrouch, global gSwing, global gLift, global gBob, global gStep,
-              global gSettle, global gLead, global gMaxSpeed, global gAccel, global gMaxTurn, global gTurnAccel, global gAimRate, global gToe, global gMaxRise, global gUp,
-              global gDown, global gClimb, global gMargin, global gMaxReach, global gGravity, global gMaxFall, global gLandDip, global gDipRate, global gFallDrift, global gPilotAimRate,
-              global gKneelDrop, global gKneelTime, global gAgile, global gStrafe, global gJumpSpeed, global gJumpCool];
-    line d["n"] = line n;
-    return line d;
+/** Keeps the current type's parsed data, in globals of its own ("c<type> <name>").
+ * (A dict of it lost some of its lists and numbers on the plot, for no clear
+ * reason; plain variables keep them.) */
+function saveType(t: num) {
+    global "c%var(t) mSeg" = global mSeg;
+    global "c%var(t) mPart" = global mPart;
+    global "c%var(t) mGroup" = global mGroup;
+    global "c%var(t) mPartGroup" = global mPartGroup;
+    global "c%var(t) mDmg" = global mDmg;
+    global "c%var(t) mPartIdx" = global mPartIdx;
+    global "c%var(t) wGuns" = global wGuns;
+    global "c%var(t) pPath" = global pPath;
+    global "c%var(t) pExit" = global pExit;
+    global "c%var(t) tProbes" = global tProbes;
+    global "c%var(t) tFootSamples" = global tFootSamples;
+    global "c%var(t) gSegs" = global gSegs;
+    global "c%var(t) gKneelJ" = global gKneelJ;
+    global "c%var(t) gRoll" = global gRoll;
+    global "c%var(t) gKneelAnk" = global gKneelAnk;
+    global "c%var(t) gKneelPitch" = global gKneelPitch;
+    global "c%var(t) gKneelLift" = global gKneelLift;
+    global "c%var(t) gHip" = global gHip;
+    global "c%var(t) gAnkle" = global gAnkle;
+    global "c%var(t) sLegs" = global sLegs;
+    global "c%var(t) sLegK" = global sLegK;
+    global "c%var(t) lRest" = global lRest;
+    global "c%var(t) lAdj" = global lAdj;
+    global "c%var(t) lDiag" = global lDiag;
+    global "c%var(t) lOrder" = global lOrder;
+    global "c%var(t) gL1" = global gL1;
+    global "c%var(t) gL2" = global gL2;
+    global "c%var(t) gT0a" = global gT0a;
+    global "c%var(t) gPhi0" = global gPhi0;
+    global "c%var(t) gBend" = global gBend;
+    global "c%var(t) gCrouch" = global gCrouch;
+    global "c%var(t) gSwing" = global gSwing;
+    global "c%var(t) gLift" = global gLift;
+    global "c%var(t) gBob" = global gBob;
+    global "c%var(t) gStep" = global gStep;
+    global "c%var(t) gSettle" = global gSettle;
+    global "c%var(t) gLead" = global gLead;
+    global "c%var(t) gMaxSpeed" = global gMaxSpeed;
+    global "c%var(t) gAccel" = global gAccel;
+    global "c%var(t) gMaxTurn" = global gMaxTurn;
+    global "c%var(t) gTurnAccel" = global gTurnAccel;
+    global "c%var(t) gAimRate" = global gAimRate;
+    global "c%var(t) gToe" = global gToe;
+    global "c%var(t) gMaxRise" = global gMaxRise;
+    global "c%var(t) gUp" = global gUp;
+    global "c%var(t) gDown" = global gDown;
+    global "c%var(t) gClimb" = global gClimb;
+    global "c%var(t) gMargin" = global gMargin;
+    global "c%var(t) gMaxReach" = global gMaxReach;
+    global "c%var(t) gGravity" = global gGravity;
+    global "c%var(t) gMaxFall" = global gMaxFall;
+    global "c%var(t) gLandDip" = global gLandDip;
+    global "c%var(t) gDipRate" = global gDipRate;
+    global "c%var(t) gFallDrift" = global gFallDrift;
+    global "c%var(t) gPilotAimRate" = global gPilotAimRate;
+    global "c%var(t) gKneelDrop" = global gKneelDrop;
+    global "c%var(t) gKneelTime" = global gKneelTime;
+    global "c%var(t) gAgile" = global gAgile;
+    global "c%var(t) gStrafe" = global gStrafe;
+    global "c%var(t) gJumpSpeed" = global gJumpSpeed;
+    global "c%var(t) gJumpCool" = global gJumpCool;
+    global "c%var(t) gLegs" = global gLegs;
+    global "c%var(t) sClimbShare" = global sClimbShare;
+    global "c%var(t) sTiltShare" = global sTiltShare;
+    global "c%var(t) sTiltMax" = global sTiltMax;
+    global "c%var(t) lTrigRest" = global lTrigRest;
+    global "c%var(t) lTrigMove" = global lTrigMove;
+    global "c%var(t) lComfort" = global lComfort;
+    global "c%var(t) lLegSpeed" = global lLegSpeed;
+    global "c%var(t) lLook" = global lLook;
+    global "c%var(t) lCoolX" = global lCoolX;
+    global "c%var(t) lCoolS" = global lCoolS;
+    global "c%var(t) lUncomf" = global lUncomf;
+    global "c%var(t) lMid" = global lMid;
+    global "c%var(t) sLeanMax" = global sLeanMax;
 }
 
-/** Puts a type's parsed data (saveType) back in the globals. */
-function restoreType(d: dict) {
-    global mSeg = d["mSeg"] as list;
-    global mPart = d["mPart"] as list;
-    global mGroup = d["mGroup"] as list;
-    global mPartGroup = d["mPartGroup"] as list[num];
-    global mDmg = d["mDmg"] as list;
-    global mPartIdx = d["mPartIdx"] as dict[num];
-    global wGuns = d["wGuns"] as list;
-    global pPath = d["pPath"] as list;
-    global pExit = d["pExit"] as list;
-    global tProbes = d["tProbes"] as list;
-    global tFootSamples = d["tFootSamples"] as list[vec];
-    global gSegs = d["gSegs"] as list[num];
-    global gKneelJ = d["gKneelJ"] as list[num];
-    global gRoll = d["gRoll"] as list[num];
-    global gKneelAnk = d["gKneelAnk"] as list[vec];
-    global gKneelPitch = d["gKneelPitch"] as list[num];
-    global gKneelLift = d["gKneelLift"] as list[num];
-    global gHip = d["gHip"] as vec;
-    global gAnkle = d["gAnkle"] as vec;
-    line n = d["n"] as list[num];
-    global gL1 = line n[1];
-    global gL2 = line n[2];
-    global gT0a = line n[3];
-    global gPhi0 = line n[4];
-    global gBend = line n[5];
-    global gCrouch = line n[6];
-    global gSwing = line n[7];
-    global gLift = line n[8];
-    global gBob = line n[9];
-    global gStep = line n[10];
-    global gSettle = line n[11];
-    global gLead = line n[12];
-    global gMaxSpeed = line n[13];
-    global gAccel = line n[14];
-    global gMaxTurn = line n[15];
-    global gTurnAccel = line n[16];
-    global gAimRate = line n[17];
-    global gToe = line n[18];
-    global gMaxRise = line n[19];
-    global gUp = line n[20];
-    global gDown = line n[21];
-    global gClimb = line n[22];
-    global gMargin = line n[23];
-    global gMaxReach = line n[24];
-    global gGravity = line n[25];
-    global gMaxFall = line n[26];
-    global gLandDip = line n[27];
-    global gDipRate = line n[28];
-    global gFallDrift = line n[29];
-    global gPilotAimRate = line n[30];
-    global gKneelDrop = line n[31];
-    global gKneelTime = line n[32];
-    global gAgile = line n[33];
-    global gStrafe = line n[34];
-    global gJumpSpeed = line n[35];
-    global gJumpCool = line n[36];
+/** Puts type t's kept data (saveType) back in the globals. */
+function restoreType(t: num) {
+    global mSeg = global "c%var(t) mSeg" as list;
+    global mPart = global "c%var(t) mPart" as list;
+    global mGroup = global "c%var(t) mGroup" as list;
+    global mPartGroup = global "c%var(t) mPartGroup" as list[num];
+    global mDmg = global "c%var(t) mDmg" as list;
+    global mPartIdx = global "c%var(t) mPartIdx" as dict[num];
+    global wGuns = global "c%var(t) wGuns" as list;
+    global pPath = global "c%var(t) pPath" as list;
+    global pExit = global "c%var(t) pExit" as list;
+    global tProbes = global "c%var(t) tProbes" as list;
+    global tFootSamples = global "c%var(t) tFootSamples" as list[vec];
+    global gSegs = global "c%var(t) gSegs" as list[num];
+    global gKneelJ = global "c%var(t) gKneelJ" as list[num];
+    global gRoll = global "c%var(t) gRoll" as list[num];
+    global gKneelAnk = global "c%var(t) gKneelAnk" as list[vec];
+    global gKneelPitch = global "c%var(t) gKneelPitch" as list[num];
+    global gKneelLift = global "c%var(t) gKneelLift" as list[num];
+    global gHip = global "c%var(t) gHip" as vec;
+    global gAnkle = global "c%var(t) gAnkle" as vec;
+    global sLegs = global "c%var(t) sLegs" as list;
+    global sLegK = global "c%var(t) sLegK" as list[num];
+    global lRest = global "c%var(t) lRest" as list[vec];
+    global lAdj = global "c%var(t) lAdj" as list;
+    global lDiag = global "c%var(t) lDiag" as list;
+    global lOrder = global "c%var(t) lOrder" as list;
+    global gL1 = global "c%var(t) gL1" as num;
+    global gL2 = global "c%var(t) gL2" as num;
+    global gT0a = global "c%var(t) gT0a" as num;
+    global gPhi0 = global "c%var(t) gPhi0" as num;
+    global gBend = global "c%var(t) gBend" as num;
+    global gCrouch = global "c%var(t) gCrouch" as num;
+    global gSwing = global "c%var(t) gSwing" as num;
+    global gLift = global "c%var(t) gLift" as num;
+    global gBob = global "c%var(t) gBob" as num;
+    global gStep = global "c%var(t) gStep" as num;
+    global gSettle = global "c%var(t) gSettle" as num;
+    global gLead = global "c%var(t) gLead" as num;
+    global gMaxSpeed = global "c%var(t) gMaxSpeed" as num;
+    global gAccel = global "c%var(t) gAccel" as num;
+    global gMaxTurn = global "c%var(t) gMaxTurn" as num;
+    global gTurnAccel = global "c%var(t) gTurnAccel" as num;
+    global gAimRate = global "c%var(t) gAimRate" as num;
+    global gToe = global "c%var(t) gToe" as num;
+    global gMaxRise = global "c%var(t) gMaxRise" as num;
+    global gUp = global "c%var(t) gUp" as num;
+    global gDown = global "c%var(t) gDown" as num;
+    global gClimb = global "c%var(t) gClimb" as num;
+    global gMargin = global "c%var(t) gMargin" as num;
+    global gMaxReach = global "c%var(t) gMaxReach" as num;
+    global gGravity = global "c%var(t) gGravity" as num;
+    global gMaxFall = global "c%var(t) gMaxFall" as num;
+    global gLandDip = global "c%var(t) gLandDip" as num;
+    global gDipRate = global "c%var(t) gDipRate" as num;
+    global gFallDrift = global "c%var(t) gFallDrift" as num;
+    global gPilotAimRate = global "c%var(t) gPilotAimRate" as num;
+    global gKneelDrop = global "c%var(t) gKneelDrop" as num;
+    global gKneelTime = global "c%var(t) gKneelTime" as num;
+    global gAgile = global "c%var(t) gAgile" as num;
+    global gStrafe = global "c%var(t) gStrafe" as num;
+    global gJumpSpeed = global "c%var(t) gJumpSpeed" as num;
+    global gJumpCool = global "c%var(t) gJumpCool" as num;
+    global gLegs = global "c%var(t) gLegs" as num;
+    global sClimbShare = global "c%var(t) sClimbShare" as num;
+    global sTiltShare = global "c%var(t) sTiltShare" as num;
+    global sTiltMax = global "c%var(t) sTiltMax" as num;
+    global lTrigRest = global "c%var(t) lTrigRest" as num;
+    global lTrigMove = global "c%var(t) lTrigMove" as num;
+    global lComfort = global "c%var(t) lComfort" as num;
+    global lLegSpeed = global "c%var(t) lLegSpeed" as num;
+    global lLook = global "c%var(t) lLook" as num;
+    global lCoolX = global "c%var(t) lCoolX" as num;
+    global lCoolS = global "c%var(t) lCoolS" as num;
+    global lUncomf = global "c%var(t) lUncomf" as num;
+    global lMid = global "c%var(t) lMid" as num;
+    global sLeanMax = global "c%var(t) sLeanMax" as num;
 }
 
 /** The type numbered by its name ("walker", "sprinter"), or 0. */
@@ -267,7 +340,7 @@ function mechAnchorUp(): num {
 }
 
 function mechCullWidth(): num {
-    return 15;
+    return 18;
 }
 
 function mechCullHeight(): num {
@@ -330,22 +403,21 @@ function mechSegments(m: num): list {
  * the gait's body height) and each draw group gets its matrix, interpolated
  * over `dur` ticks. */
 function mechRender(m: num, dur: num = 0) {
-    line yaw = global mYaw[m];
-    line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
-    line U = vec(0, 1, 0);
-    line L = line U.cross(line F);
-    line W = [line L, line U, line F];
+    // the mech's axes and its frame origin (a spider's tilt and climb too)
+    line W = mechBasis(m);
+    line O = mechOrigin(m);
     line segs = mechSegments(m);
     line spin = global mSpin[m];
     line o = global mPos[m];
     // displays on the anchor; the matrices add the origin's offset from it
-    line up = global gBodyY[m] - mechAnchorUp();
+    line anchor = vec(line o.x, line o.y + mechAnchorUp(), line o.z);
+    line off = line O - line anchor;
     select entitiesByName(global mAll[m] as list[str]);
-    selectedEntity.teleport(loc(line o.x, line o.y + mechAnchorUp(), line o.z));
+    selectedEntity.teleport(loc(line anchor.x, line anchor.y, line anchor.z));
     select reset;
     // the pilot's body and seat ride with the torso (pilot.tc)
     if (global mPilot[m] != "") {
-        pilotRender(m, line W, line segs[(global gSegs[7] as num)] as list, vec(line o.x, line o.y + global gBodyY[m], line o.z));
+        pilotRender(m, line W, line segs[(global gSegs[7] as num)] as list, line O);
     }
     line hatch = global mHatch[m];
     line gids = global mGroupIds[m] as list;
@@ -383,7 +455,7 @@ function mechRender(m: num, dur: num = 0) {
         line wx = rotApply(line W, line cx);
         line wy = rotApply(line W, line cy);
         line wz = rotApply(line W, line cz);
-        line wt = rotApply(line W, line t) + vec(0, line up, 0);
+        line wt = rotApply(line W, line t) + line off;
         line gw.append([line wx, line wy, line wz, line wt]);
         select entitiesByName(line gids[line i] as list[str]);
         selectedEntity.setDisplayTransformationMatrix([line wx.x, line wy.x, line wz.x, line wt.x, line wx.y, line wy.y, line wz.y, line wt.y, line wx.z, line wy.z, line wz.z, line wt.z, 0, 0, 0, 1]);

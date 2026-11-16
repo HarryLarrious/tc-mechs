@@ -75,15 +75,30 @@ GAIT = {
     # piloting: an agile mech (1) steers where its pilot looks, strafes on A/D,
     # kneels on Shift (its turret only turns on its own while kneeling) and
     # jumps on Space, then pressurizes again; the walker turns on A/D
+    "legs": 2,           # two legs (the walker, the sprinter) or four (the spider: its own walk, spider.tc)
     "agile": 0.0,
     "strafe": 0.0,         # strafing speed, a share of max_speed
     "jump_speed": 0.0,     # m/s (real) straight up
     "jump_cooldown": 0.0,  # seconds to pressurize again after a jump
+    # the legs (tc/legs.tc): a foot steps once it is this far from its rest spot (standing; at full
+    # speed), may not land farther than comfort from it (a planted foot that far behind slows the
+    # body to uncomfortable of its speed), flies at leg_speed, lands look_ahead of the trigger
+    # radius ahead; ticks a foot waits after its neighbour lands, and after its diagonal partner
+    # sets off
+    "trigger_rest": 0.10,
+    "trigger_move": 0.75,
+    "comfort": 1.5,
+    "leg_speed": 4.5,
+    "look_ahead": 0.6,
+    "cool_cross": 1.0,
+    "cool_same": 1.0,
+    "uncomfortable": 0.3,
 }
 KNEEL_POSE = {"hip_l": 41.0, "knee_l": 47.0, "ankle_l": -1.0, "hip_r": -102.0, "knee_r": 64.0, "ankle_r": 38.0}
 GAIT_LENGTHS = ("crouch", "lift", "bob", "step", "settle", "max_speed", "accel", "max_rise", "probe_up",
                 "probe_down", "climb_rate", "foot_heel", "foot_mid", "foot_toe", "foot_side", "land_dip",
-                "dip_rate", "fall_drift", "kneel_drop", "kneel_lift_l", "kneel_lift_r")
+                "dip_rate", "fall_drift", "kneel_drop", "kneel_lift_l", "kneel_lift_r", "trigger_rest", "trigger_move",
+                "comfort", "leg_speed")
 
 # Collision probes (design size, mech frame): points that must stay out of
 # solid blocks. "body" ones turn with the body's heading, "torso" ones with
@@ -130,6 +145,7 @@ MATERIALS: dict[str, dict] = {
     "visor":     {},
     "seat":      {},
     "screen":    {"emit": 12},
+    "lamp":      {"emit": 15},
 }
 
 
@@ -268,6 +284,10 @@ def make_textures() -> dict[str, Image.Image]:
     glow = _flat((90, 230, 255), noise=3, seed=20)
     ImageDraw.Draw(glow).rectangle((5, 5, 10, 10), fill=(220, 252, 255, 255))
     t["glow"] = glow
+
+    lamp = _flat((235, 30, 36), noise=3, seed=23)        # red sensor lens / laser
+    ImageDraw.Draw(lamp).rectangle((5, 5, 10, 10), fill=(255, 150, 140, 255))
+    t["lamp"] = lamp
 
     visor = _flat((16, 34, 52), noise=2, seed=21)       # dark tinted viewport
     d = ImageDraw.Draw(visor)

@@ -1,0 +1,92 @@
+{
+ "textures": {
+  "armor_dmg": "mech:item/mech/armor_dmg",
+  "particle": "mech:item/mech/armor_dmg"
+ },
+ "elements": [
+  {
+   "from": [
+    3.7677,
+    8.3708,
+    6.8481
+   ],
+   "to": [
+    7.6077,
+    8.4988,
+    7.7761
+   ],
+   "rotation": {
+    "origin": [
+     5.6877,
+     8.4348,
+     7.3121
+    ],
+    "x": 131.762,
+    "y": 86.744,
+    "z": -5.851
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#armor_dmg",
+     "tintindex": 0
+    }
+   }
+  }
+ ]
+}

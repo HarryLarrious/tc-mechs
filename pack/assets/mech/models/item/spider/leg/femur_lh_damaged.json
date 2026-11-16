@@ -1,0 +1,322 @@
+{
+ "textures": {
+  "gunmetal": "mech:item/mech/gunmetal",
+  "hose": "mech:item/mech/hose",
+  "steel": "mech:item/mech/steel",
+  "particle": "mech:item/mech/gunmetal"
+ },
+ "elements": [
+  {
+   "from": [
+    11.0366,
+    11.0254,
+    3.4257
+   ],
+   "to": [
+    12.3166,
+    12.3694,
+    12.488
+   ],
+   "rotation": {
+    "origin": [
+     11.6766,
+     11.6974,
+     7.9568
+    ],
+    "x": -44.762,
+    "y": 95.501,
+    "z": -1.916
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    }
+   }
+  },
+  {
+   "from": [
+    11.5128,
+    11.0828,
+    3.0859
+   ],
+   "to": [
+    11.7048,
+    12.0428,
+    11.3483
+   ],
+   "rotation": {
+    "origin": [
+     11.6088,
+     11.5628,
+     7.2171
+    ],
+    "x": -43.064,
+    "y": 93.925,
+    "z": 4.482
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    }
+   }
+  },
+  {
+   "from": [
+    11.4773,
+    11.0861,
+    4.5927
+   ],
+   "to": [
+    11.6693,
+    12.0461,
+    12.8551
+   ],
+   "rotation": {
+    "origin": [
+     11.5733,
+     11.5661,
+     8.7239
+    ],
+    "x": -50.863,
+    "y": 93.492,
+    "z": -2.066
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    }
+   }
+  },
+  {
+   "from": [
+    11.7501,
+    10.8284,
+    4.315
+   ],
+   "to": [
+    12.3261,
+    11.0844,
+    11.6173
+   ],
+   "rotation": {
+    "origin": [
+     12.0381,
+     10.9564,
+     7.9662
+    ],
+    "x": -49.281,
+    "y": 85.242,
+    "z": -3.24
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#hose"
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#hose"
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#hose"
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#hose"
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#hose"
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#hose"
+    }
+   }
+  }
+ ]
+}

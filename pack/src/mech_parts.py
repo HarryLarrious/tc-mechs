@@ -666,7 +666,8 @@ def walker() -> dict:
 def all_types() -> list[dict]:
     """Every mech type, in game order (the game's type numbers start at 1)."""
     from mech_sprinter import sprinter
-    return [walker(), sprinter()]
+    from mech_spider import spider
+    return [walker(), sprinter(), spider()]
 
 
 def pilot_path(t: dict, name: str) -> list:
@@ -712,6 +713,9 @@ def make_spec(t: dict, folder_of: dict) -> dict:
         "camera_eye": [round(c * K, 4) for c in t["camera_eye"]],
         "guns": [{"kind": k, "elevation": j, "traverse": tj, "side": sd, "muzzle": [round(c * K, 4) for c in pt]}
                  for k, j, pt, tj, sd in guns_of(t)],
+        "legs": t.get("legs", 2),
+        "spider_legs": [{"leg": n, "side": sd, "yaw": yj, "femur": fj, "tibia": tj, "foot": [round(c * K, 4) for c in ft],
+                         "home": [round(c * K, 4) for c in hm]} for n, sd, yj, fj, tj, ft, hm in t.get("spider_legs", [])],
         "segments": t["segments"],
         "joints": joints,
         "anims": {"fixed": "rigid with its segment",
@@ -787,6 +791,9 @@ def tc_type_funcs(n: str, spec: dict) -> str:
         f"function {n}Muzzles(): list {{\n    return [{guns}];\n}}\n\n"
         f"function {n}CameraEye(): vec {{\n    return {v(spec['camera_eye'])};\n}}\n\n"
         f"function {n}CockpitSeat(): vec {{\n    return {v(spec['cockpit_seat'])};\n}}\n\n"
+        f"function {n}Legs(): list {{\n    return ["
+        + ", ".join(f'"{l["leg"]} {l["side"]} {l["yaw"]} {l["femur"]} {l["tibia"]} ' + " ".join(tc_num(c) for c in l["foot"] + l["home"]) + '"'
+                    for l in spec["spider_legs"]) + "];\n}\n\n"
         f"function {n}DefaultColors(): list {{\n    return ["
         + ", ".join(f"0x{c[1:].upper()}" for c in spec["tint_defaults"]) + "];\n}\n\n"
     )
@@ -829,6 +836,9 @@ TC_FUNCS = [
      " * lenses, in the mech frame at rest (m); it turns with the torso."),
     ("CockpitSeat", "vec", "The pilot's seat: the top center of the chair's seat in the mech frame at\n"
      " * rest (it turns with the torso)."),
+    ("Legs", "list", "A four-legged type's legs (none for two legs), each \"leg side yaw femur tibia\n"
+     " * fx fy fz hx hz\": its name, its side (1 left, -1 right), its three joints, the\n"
+     " * claw's tip at rest and its home spot on the ground (mech frame, m)."),
     ("DefaultColors", "list", "Default armor paint and accent colors."),
 ]
 
@@ -881,9 +891,12 @@ def main():
             + [f"{n}_{s}" for s in "lr" for n in ("hip_mount", "hip_motor", "air_tank", "thigh", "knee_motor", "shin",
                                                    "shin_armor", "ankle_motor", "foot", "foot_armor")]
             + [f"{j}_piston_{k}_{s}" for j in ("hip", "knee", "ankle") for k in ("cyl", "rod") for s in "lr"])
+    spider_need = (["pelvis", "power_pack", "torso_frame", "torso_top", "torso_side_l", "torso_side_r",
+                    "cockpit", "sensors", "ammo_bustle", "antenna", "hatch"]
+                   + [f"{n}_{l}" for l in ("lf", "lh", "rf", "rh") for n in ("coxa", "femur", "knee_motor", "tibia", "claw")])
     for t in types:
         ids = {p.id for _, ps in t["folders"] for p in ps}
-        missing = [x for x in need if x not in ids]
+        missing = [x for x in (spider_need if t.get("legs", 2) == 4 else need) if x not in ids]
         for kind, joint, pt, tj, side in guns_of(t):
             pre = "heavy" if kind == "heavy" else "light"
             parts = [f"{pre}_gun_{side}", f"{pre}_mount_{side}"] + ([f"heavy_barrels_{side}"] if pre == "heavy" else [])
@@ -918,9 +931,9 @@ def main():
         viewer[t["name"]] = {"spec": spec, "models": models}
         allp = [p for _, ps in t["folders"] for p in ps]
         n_el = sum(len(p.elems) for p in allp)
+        hips = spec["joints"]["hip_l"]["pivot"][1] if "hip_l" in spec["joints"] else spec["joints"]["yaw_lf"]["pivot"][1]
         print(f"{t['name']}: {len(allp)} parts, {n_el} elements, {spec['total_mass']} kg, "
-              f"{spec['scale']}x, hips {spec['joints']['hip_l']['pivot'][1]} m up, "
-              f"top speed {spec['gait']['max_speed']} m/s")
+              f"{spec['scale']}x, hips {hips} m up, top speed {spec['gait']['max_speed']} m/s")
         for name, ((A, _), (B, _)) in t["pistons"].items():
             print(f"  {name} piston: rest length {math.dist(A, B):.3f}")
         for j, r in t["ranges"].items():

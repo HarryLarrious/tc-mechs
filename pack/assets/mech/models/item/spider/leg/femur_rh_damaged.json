@@ -1,0 +1,322 @@
+{
+ "textures": {
+  "gunmetal": "mech:item/mech/gunmetal",
+  "hose": "mech:item/mech/hose",
+  "steel": "mech:item/mech/steel",
+  "particle": "mech:item/mech/gunmetal"
+ },
+ "elements": [
+  {
+   "from": [
+    3.7337,
+    10.9888,
+    3.4843
+   ],
+   "to": [
+    5.0137,
+    12.3328,
+    12.5466
+   ],
+   "rotation": {
+    "origin": [
+     4.3737,
+     11.6608,
+     8.0154
+    ],
+    "x": -49.411,
+    "y": -84.839,
+    "z": -1.667
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    }
+   }
+  },
+  {
+   "from": [
+    4.2613,
+    11.0983,
+    3.1229
+   ],
+   "to": [
+    4.4533,
+    12.0583,
+    11.3853
+   ],
+   "rotation": {
+    "origin": [
+     4.3573,
+     11.5783,
+     7.2541
+    ],
+    "x": -42.357,
+    "y": -85.7,
+    "z": -3.151
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    }
+   }
+  },
+  {
+   "from": [
+    4.2939,
+    11.1652,
+    4.6325
+   ],
+   "to": [
+    4.4859,
+    12.1252,
+    12.8949
+   ],
+   "rotation": {
+    "origin": [
+     4.3899,
+     11.6452,
+     8.7637
+    ],
+    "x": -40.935,
+    "y": -91.498,
+    "z": -4.512
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#steel"
+    }
+   }
+  },
+  {
+   "from": [
+    3.6417,
+    10.8357,
+    4.3616
+   ],
+   "to": [
+    4.2177,
+    11.0917,
+    11.664
+   ],
+   "rotation": {
+    "origin": [
+     3.9297,
+     10.9637,
+     8.0128
+    ],
+    "x": -50.296,
+    "y": -85.761,
+    "z": -3.991
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#hose"
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#hose"
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#hose"
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#hose"
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#hose"
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#hose"
+    }
+   }
+  }
+ ]
+}

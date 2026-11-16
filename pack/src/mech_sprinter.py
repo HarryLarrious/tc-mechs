@@ -840,6 +840,7 @@ GAIT.update({
     "step": 0.34,
     "lead": 0.55,
     "max_speed": 4.2,    # ...and long ones: stride = speed x 2 x swing = 3.5 (5.3 m), at 6.3 m/s
+    "trigger_rest": 0.08, "trigger_move": 0.9, "comfort": 1.6, "leg_speed": 10.5,
     "accel": 2.2,
     "max_turn": 65.0,
     "turn_accel": 150.0,

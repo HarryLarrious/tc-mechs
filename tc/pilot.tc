@@ -155,6 +155,13 @@ function boardNearest {
 function exitMech {
     line m = mechOfPilot(default.uuid);
     if (line m != 0 && global mBoard[line m] == 0) {
+        // (a spider has to be on the ground)
+        useMech(line m);
+        if (global gLegs == 4 && (global sUp[line m].y < 0.9 || global gFalling[line m] == 1)) {
+            default.sendActionBar(s"<gold>Get down on the ground to get out.");
+            default.playSound(snd("Dispenser Fail", 0.8, 1.2));
+            return;
+        }
         global mBoard[line m] = 5;
         global mBoardT[line m] = 0;
         global gWantSpeed[line m] = 0;
@@ -348,7 +355,9 @@ function pilotBoardTick(m: num): num {
         if (global gKneel[m] == 0) {
             global mBoard[m] = 0;
             select playersByName(global mPilot[m]);
-            if (global gAgile == 1) {
+            if (global gLegs == 4) {
+                selected.sendMessage(s"<gray>Piloting spider %var(m). <yellow>W/S</yellow> run, <yellow>A/D</yellow> strafe, look to steer and aim (the body tilts toward your look), run at a wall to climb it (the air kit grips), <yellow>Space</yellow> jump (then it pressurizes again), <yellow>Shift</yellow> crouch, <yellow>right click</yellow> (hold) rail cannon, <yellow>left click</yellow> belly guns, <yellow>Q</yellow> nose camera, <yellow>F</yellow> get out.");
+            } else if (global gAgile == 1) {
                 selected.sendMessage(s"<gray>Piloting mech %var(m). <yellow>W/S</yellow> run, <yellow>A/D</yellow> strafe, look to steer and aim, <yellow>Shift</yellow> kneel (the turret turns freely), <yellow>Space</yellow> jump (then it pressurizes again), <yellow>right click</yellow> (hold) cannons, <yellow>left click</yellow> machine gun, <yellow>Q</yellow> roof camera, <yellow>F</yellow> get out.");
             } else {
                 selected.sendMessage(s"<gray>Piloting mech %var(m). <yellow>W/S</yellow> walk, <yellow>A/D</yellow> turn, look to aim, <yellow>right click</yellow> (hold) cannons, <yellow>left click</yellow> machine guns, <yellow>Q</yellow> roof camera, <yellow>F</yellow> get out.");
@@ -761,8 +770,17 @@ function pilotHud(m: num, aimAt: num) {
     } else if (stat(m, "mob") < 0.7) {
         line warn = line warn + "   <gold>LEGS DAMAGED</gold>";
     }
-    if (stat(m, "heavy_l") == 0 || stat(m, "heavy_r") == 0) {
+    line down = 0;
+    for (line g of global wGuns) {
+        if ((line g as list)[1] as num == 1 && stat(m, "heavy_" + ((line g as list)[4] as str)) == 0) {
+            line down = 1;
+        }
+    }
+    if (line down == 1) {
         line warn = line warn + "   <red>CANNON DOWN</red>";
+    }
+    if (global gLegs == 4 && stat(m, "climb") == 0 && stat(m, "legLost") == 0) {
+        line warn = line warn + "   <gold>NO GRIP</gold>";
     }
     if (stat(m, "aim") == 0) {
         line warn = line warn + "   <red>TURRET LOCKED</red>";
@@ -774,8 +792,15 @@ function pilotHud(m: num, aimAt: num) {
             line state = "   <aqua><b>AIRBORNE</b></aqua>";
         }
     }
+    if (global gLegs == 4 && global gFalling[m] == 0 && global sUp[m].y < 0.7) {
+        line state = line state + "   <aqua><b>CLIMBING</b></aqua>";
+    }
     if (global gHold[m] == 1) {
-        line state = line state + "   <aqua><b>KNEELING</b></aqua> <gray>turret free</gray>";
+        if (global gLegs == 4) {
+            line state = line state + "   <aqua><b>CROUCHED</b></aqua>";
+        } else {
+            line state = line state + "   <aqua><b>KNEELING</b></aqua> <gray>turret free</gray>";
+        }
     }
     if (global gAgile == 1) {
         if (global gPress[m] > 0) {
@@ -789,7 +814,10 @@ function pilotHud(m: num, aimAt: num) {
     if (stat(m, "blind") == 1) {
         selected.sendActionBar(s"<dark_red><b>COCKPIT DAMAGED: SYSTEMS DOWN</b></dark_red>");
     } else {
-        selected.sendActionBar(s"%var(view)<white><b>%var(kmh)</b></white> <gray>km/h   heading</gray> <white>%var(heading)°</white>   <gray>turret lag</gray> <white>%var(lag)°</white>   <gray>integrity</gray> <white>%var(integrity)%</white>   <gray>last landing</gray> <white>%var(impact) m/s</white>   <gray>cannons</gray> <white>%var(spin)%</white>   <gray>CPU %var(cpu)%</gray>%var(state)%var(warn)");
+        // (one plain text, parsed as a whole: the tags in the pieces would
+        // show as they are if the pieces went into a styled text)
+        line msg = "%var(view)<white><b>%var(kmh)</b></white> <gray>km/h   heading</gray> <white>%var(heading)°</white>   <gray>turret lag</gray> <white>%var(lag)°</white>   <gray>integrity</gray> <white>%var(integrity)%</white>   <gray>last landing</gray> <white>%var(impact) m/s</white>   <gray>cannons</gray> <white>%var(spin)%</white>   <gray>CPU %var(cpu)%</gray>%var(state)%var(warn)";
+        selected.sendActionBar(txt.parseExpression(line msg));
     }
     select reset;
 }

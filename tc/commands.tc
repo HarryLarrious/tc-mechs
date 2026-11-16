@@ -16,9 +16,9 @@ playerevent join {
 playerevent command {
     line words = event.command.split(" ");
     line cmd = (line words[1] as str).replace("@", "");
-    if (line cmd == "mech" || line cmd == "sprinter" || line cmd == "walker") {
-        // @mech [walker|sprinter] [turn degrees]: spawns a mech facing you
-        // (turn 90 shows its side); @sprinter and @walker are the same
+    if (line cmd == "mech" || line cmd == "sprinter" || line cmd == "walker" || line cmd == "spider") {
+        // @mech [walker|sprinter|spider] [turn degrees]: spawns a mech facing
+        // you (turn 90 shows its side); @sprinter, @walker and @spider are the same
         line kind = mechTypeOf(line cmd);
         line at = 2;
         if (line kind == 0) {
@@ -65,7 +65,7 @@ playerevent command {
     } else if (line cmd == "pack") {
         packSend();
     } else {
-        default.sendMessage(s"<gray>Commands: <yellow>@mech [walker|sprinter] [turn]</yellow>, <yellow>@walk [m/s] [turn]</yellow>, <yellow>@turn [deg/s]</yellow>, <yellow>@stop</yellow>, <yellow>@follow</yellow>, <yellow>@board</yellow>, <yellow>@exit</yellow> (or F), <yellow>@pose JOINT DEGREES</yellow>, <yellow>@pose reset</yellow>, <yellow>@status</yellow>, <yellow>@damage PART AMOUNT</yellow>, <yellow>@repair</yellow>, <yellow>@clearmechs</yellow>, <yellow>@selftest</yellow>, <yellow>@pack</yellow>");
+        default.sendMessage(s"<gray>Commands: <yellow>@mech [walker|sprinter|spider] [turn]</yellow>, <yellow>@walk [m/s] [turn]</yellow>, <yellow>@turn [deg/s]</yellow>, <yellow>@stop</yellow>, <yellow>@follow</yellow>, <yellow>@board</yellow>, <yellow>@exit</yellow> (or F), <yellow>@pose JOINT DEGREES</yellow>, <yellow>@pose reset</yellow>, <yellow>@status</yellow>, <yellow>@damage PART AMOUNT</yellow>, <yellow>@repair</yellow>, <yellow>@clearmechs</yellow>, <yellow>@selftest</yellow>, <yellow>@pack</yellow>");
     }
 }
 

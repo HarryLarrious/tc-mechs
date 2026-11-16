@@ -1,33 +1,26 @@
 // The procedural walk over blocks: the mech moves and turns at a commanded
 // speed and turn rate (or walks after a player), and its legs work out their
-// own steps. Same algorithm as tools/gait_check.py (the reference, with its
-// checks on test courses) and the viewer; blocks are read in terrain.tc.
+// own steps (legs.tc, for every type; a spider's body has its own walk,
+// spider.tc). Blocks are read in terrain.tc.
 //
-// * Footholds: the block top under the middle of a foot: one block to stand
-//   on. The rest of the foot tilts to the slope of the blocks under its heel
-//   and toe (terrain.tc).
-// * Steps: a planted foot stays where it is in the world. When it lags too
-//   far from its home spot under its hip (moved ahead by half a step) and the
-//   other foot is planted, it swings to where its home will be when it lands,
-//   or a longer or shorter step if that spot is no good: no ground, more than
-//   gMaxRise above or below the other foot, something higher than both ends
-//   in the way, or a leg out of reach or too near a joint limit. The swing
-//   lifts higher for a step up or down.
+// * Legs: each foot finds its ground every tick and steps when it is too far
+//   from its rest spot under its hip (legs.tc). A planted foot tilts to the
+//   slope of the blocks under its heel and toe (terrain.tc).
 // * Body: it moves and turns unless that would put a collision probe in a
-//   solid block (it slides along a wall if one axis is free) or stretch a
-//   planted leg too far (it waits for its feet). Its height follows the
-//   feet's average, crouched a little and rising at mid-swing.
-// * Legs: inverse kinematics in each leg's own plane (hip-knee-ankle
+//   solid block (it slides along a wall if one axis is free, and rises a
+//   little if that clears its probes); a foot left far behind slows it and
+//   stops it turning until the foot steps. Its height follows the higher of
+//   its grounded feet's targets and the ground under it, crouched a little and
+//   rising at mid-swing.
+// * Legs' joints: inverse kinematics in each leg's own plane (hip-knee-ankle
 //   triangle, knee bending as at rest); the ankle keeps the foot level and
 //   pitches the toes while it swings. A swinging foot lifts less when the
 //   full lift would fold the leg too far.
 // * Torso: trails the body's turns and swings back to face ahead (or tracks
 //   the player it follows, guns too), unless its probes would hit a block.
-// * Gravity: a planted foot whose ground is gone (or has a block grown into
-//   it) steps at once; with no step to take, or both feet gone, the mech falls
-//   with its legs hanging, lands when a foot meets a block top below it, and
-//   sinks into its legs on a hard landing. Walking toward a drop deeper than
-//   gMaxRise, a foot steps out over it and the mech falls from any height.
+// * Gravity: with no foot standing on its block and no ground under it
+//   within reach, the mech falls with its legs hanging, lands when a foot
+//   meets a block top below it, and sinks into its legs on a hard landing.
 //   Every landing reports its impact speed (mechLanded), for the damage
 //   model. An idle mech is not walked or redrawn, but its feet are checked
 //   every half second.
@@ -72,9 +65,6 @@ declare global gPress: list[num];
 /** Per mech: the tick of the pilot's last Shift (dismount) event, so a held
  * Shift, which repeats it, counts as one press. */
 declare global gHoldT: list[num];
-/** Per mech: the foot that stepped last (1 left, 2 right, 0 none): the other
- * goes next. */
-declare global gLast: list[num];
 declare global gJumpV: list[vec];
 /** Per mech: how far it is down on one knee (0 standing, 1 kneeling) and
  * where that goes (1 when parked: no pilot and nothing to do, or while the
@@ -180,28 +170,53 @@ function approach(v: num, target: num, step: num): num {
 
 /** Reads the current type's leg geometry and sets the gait's numbers (useType). */
 function loadGait {
-    global gSegs = [];
-    for (line j of ["hip_l", "knee_l", "ankle_l", "hip_r", "knee_r", "ankle_r", "waist"]) {
-        global gSegs.append(mechJointSeg(line j as str));
-    }
-    global gRoll = [];
-    for (line j of ["hip_roll_l", "ankle_roll_l", "hip_roll_r", "ankle_roll_r"]) {
-        global gRoll.append(mechJointSeg(line j as str));
-    }
-    global gHip = (global mSeg[global gSegs[1]] as list)[5] as vec;
-    line knee = (global mSeg[global gSegs[2]] as list)[5] as vec;
-    global gAnkle = (global mSeg[global gSegs[3]] as list)[5] as vec;
-    line t0 = line knee - global gHip;
-    line s0 = global gAnkle - line knee;
-    global gL1 = (line t0.y * line t0.y + line t0.z * line t0.z) ** 0.5;
-    global gL2 = (line s0.y * line s0.y + line s0.z * line s0.z) ** 0.5;
-    global gT0a = angYZ(line t0.y, line t0.z);
-    global gPhi0 = wrapDeg(angYZ(line s0.y, line s0.z) - global gT0a);
-    global gBend = 1;
-    if (global gPhi0 < 0) {
-        global gBend = -1;
-    }
     line g = mechGait();
+    global gLegs = line g["legs"] as num;
+    global sLeanMax = 0;
+    if (global gLegs == 4) {
+        // a spider: its own legs (spider.tc); the waist is all of these it has
+        loadSpiderLegs();
+        global gSegs = [0, 0, 0, 0, 0, 0, mechJointSeg("waist")];
+        global gRoll = [0, 0, 0, 0];
+        global gHip = vec(0, 0, 0);
+        global gAnkle = vec(0, 0, 0);
+        global gL1 = 1;
+        global gL2 = 1;
+        global gT0a = 0;
+        global gPhi0 = 0;
+        global gBend = 1;
+        global sClimbShare = line g["climb"] as num;
+        global sTiltShare = line g["tilt"] as num;
+        global sTiltMax = line g["tilt_max"] as num;
+        global sLeanMax = line g["lean_max"] as num;
+    } else {
+        global sLegs = [];
+        global sLegK = [];
+        global sClimbShare = 0;
+        global sTiltShare = 0;
+        global sTiltMax = 0;
+        global gSegs = [];
+        for (line j of ["hip_l", "knee_l", "ankle_l", "hip_r", "knee_r", "ankle_r", "waist"]) {
+            global gSegs.append(mechJointSeg(line j as str));
+        }
+        global gRoll = [];
+        for (line j of ["hip_roll_l", "ankle_roll_l", "hip_roll_r", "ankle_roll_r"]) {
+            global gRoll.append(mechJointSeg(line j as str));
+        }
+        global gHip = (global mSeg[global gSegs[1]] as list)[5] as vec;
+        line knee = (global mSeg[global gSegs[2]] as list)[5] as vec;
+        global gAnkle = (global mSeg[global gSegs[3]] as list)[5] as vec;
+        line t0 = line knee - global gHip;
+        line s0 = global gAnkle - line knee;
+        global gL1 = (line t0.y * line t0.y + line t0.z * line t0.z) ** 0.5;
+        global gL2 = (line s0.y * line s0.y + line s0.z * line s0.z) ** 0.5;
+        global gT0a = angYZ(line t0.y, line t0.z);
+        global gPhi0 = wrapDeg(angYZ(line s0.y, line s0.z) - global gT0a);
+        global gBend = 1;
+        if (global gPhi0 < 0) {
+            global gBend = -1;
+        }
+    }
     global gCrouch = line g["crouch"] as num;
     global gSwing = line g["swing"] as num;
     global gLift = line g["lift"] as num;
@@ -233,15 +248,23 @@ function loadGait {
     global gJumpCool = line g["jump_cooldown"] as num;
     global gKneelDrop = line g["kneel_drop"] as num;
     global gKneelTime = line g["kneel_time"] as num;
-    line kp = mechKneelPose();
-    global gKneelJ = [];
-    for (line j of ["hip_l", "knee_l", "ankle_l", "hip_r", "knee_r", "ankle_r"]) {
-        global gKneelJ.append(line kp[line j as str] as num);
+    if (global gLegs == 4) {
+        // (a spider parks by crouching)
+        global gKneelJ = [0, 0, 0, 0, 0, 0];
+        global gKneelAnk = [vec(0, 0, 0), vec(0, 0, 0)];
+        global gKneelPitch = [0, 0];
+    } else {
+        line kp = mechKneelPose();
+        global gKneelJ = [];
+        for (line j of ["hip_l", "knee_l", "ankle_l", "hip_r", "knee_r", "ankle_r"]) {
+            global gKneelJ.append(line kp[line j as str] as num);
+        }
+        global gKneelAnk = [legFK(global gKneelJ[1], global gKneelJ[2]), legFK(global gKneelJ[4], global gKneelJ[5])];
+        global gKneelPitch = [global gKneelJ[1] + global gKneelJ[2] + global gKneelJ[3], global gKneelJ[4] + global gKneelJ[5] + global gKneelJ[6]];
     }
-    global gKneelAnk = [legFK(global gKneelJ[1], global gKneelJ[2]), legFK(global gKneelJ[4], global gKneelJ[5])];
-    global gKneelPitch = [global gKneelJ[1] + global gKneelJ[2] + global gKneelJ[3], global gKneelJ[4] + global gKneelJ[5] + global gKneelJ[6]];
     global gKneelLift = [line g["kneel_lift_l"] as num, line g["kneel_lift_r"] as num];
     loadTerrain();
+    loadLegs();
 }
 
 /** Hip and knee angles that put the ankle at (dy, dz) from the hip. */
@@ -305,19 +328,46 @@ function flatDist(a: vec, b: vec): num {
 function gaitInit(m: num) {
     line pos = global mPos[m];
     line yaw = global mYaw[m];
+    line fwd = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
+    global sUp.append(vec(0, 1, 0));
+    global sFwd.append(line fwd);
+    global sTilt.append(0);
+    global sPitch.append(0);
+    global sRoll.append(0);
+    global sCorner.append([]);
     line feet = [];
     line falling = 0;
-    for (line side of [1, -1]) {
-        line h = footHome(line side as num, 0, line pos, line yaw);
-        line gy = groundUnder(line h.x, line h.z, line yaw, line pos.y, 0);
-        if (line gy < -900) {
-            line gy = line pos.y;
+    if (global gLegs == 4) {
+        // a spider: on the ground under its middle, each foot under its home
+        line g0 = spiderGround(line pos, vec(0, 1, 0));
+        if (line g0 > -900 && line g0 < 900) {
+            line pos = line pos + vec(0, line g0, 0);
+            global mPos[m] = line pos;
+        } else {
             line falling = 1;
         }
-        line feet.append(vec(line h.x, line gy, line h.z));
-    }
-    if (line falling == 0) {
-        global mPos[m] = vec(line pos.x, ((line feet[1] as vec).y + (line feet[2] as vec).y) / 2, line pos.z);
+        repeat (line i to 4) {
+            line h = spiderHome(line i, line pos, vec(0, 1, 0), line fwd, vec(0, 0, 0));
+            line fh = spiderFoothold(line i, line h, line pos, vec(0, 1, 0), line fwd, vec(0, 0, 0));
+            if (line fh.len() == 1) {
+                line feet.append(line fh[1]);
+            } else {
+                line feet.append(line h);
+            }
+        }
+    } else {
+        for (line side of [1, -1]) {
+            line h = footHome(line side as num, 0, line pos, line yaw);
+            line gy = groundUnder(line h.x, line h.z, line yaw, line pos.y, 0);
+            if (line gy < -900) {
+                line gy = line pos.y;
+                line falling = 1;
+            }
+            line feet.append(vec(line h.x, line gy, line h.z));
+        }
+        if (line falling == 0) {
+            global mPos[m] = vec(line pos.x, ((line feet[1] as vec).y + (line feet[2] as vec).y) / 2, line pos.z);
+        }
     }
     global gVy.append(0);
     global gFalling.append(line falling);
@@ -330,7 +380,6 @@ function gaitInit(m: num) {
     global gHold.append(0);
     global gPress.append(0);
     global gHoldT.append(0);
-    global gLast.append(0);
     global gJumpV.append(vec(0, 0, 0));
     global gSpeed.append(0);
     global gTurn.append(0);
@@ -341,13 +390,27 @@ function gaitInit(m: num) {
     global gWalking.append(line falling);
     global gFollow.append("");
     global gFeet.append(line feet);
-    global gSwT.append([-1, -1]);
-    global gSwA.append([vec(0, 0, 0), vec(0, 0, 0)]);
-    global gSwB.append([vec(0, 0, 0), vec(0, 0, 0)]);
-    global gSwL.append([0, 0]);
+    line nt = [];
+    line nv = [];
+    line nz = [];
+    repeat (line i to line feet.len()) {
+        line nt.append(-1);
+        line nv.append(vec(0, 0, 0));
+        line nz.append(0);
+    }
+    global gSwT.append(line nt);
+    global gSwA.append(line feet);
+    global gSwB.append(line feet);
+    global gSwL.append(line nz);
+    legsInit(line feet);
     global gKneel.append(1 - line falling);
     global gKneelTo.append(1);
-    if (line falling == 0) {
+    if (global gLegs == 4) {
+        if (line falling == 0) {
+            global gBodyY[m] = 0 - global gKneelDrop;
+        }
+        spiderPoseLegs(m);
+    } else if (line falling == 0) {
         line joints = global mJoint[m] as list;
         repeat (line i to 6) {
             line joints = setJoint(line joints, global gSegs[line i], global gKneelJ[line i]);
@@ -378,7 +441,6 @@ function gaitClear {
     global gHold = [];
     global gPress = [];
     global gHoldT = [];
-    global gLast = [];
     global gJumpV = [];
     global gFeet = [];
     global gSwT = [];
@@ -387,6 +449,13 @@ function gaitClear {
     global gSwL = [];
     global gKneel = [];
     global gKneelTo = [];
+    global sUp = [];
+    global sFwd = [];
+    global sTilt = [];
+    global sPitch = [];
+    global sRoll = [];
+    global sCorner = [];
+    legsClear();
 }
 
 /** Sets joint segment s of the joint list `joints` to `a`, clamped to its range. */
@@ -396,100 +465,9 @@ function setJoint(joints: list, s: num, a: num): list {
     return joints;
 }
 
-/** The first good landing spot for foot i (1 left, 2 right) near its home
- * spot `lead` meters ahead, for a body landing at lpos facing lyaw: the
- * planned spot, longer steps (to get a whole foot onto a step, and to bring
- * the trailing foot up a tall step), then shorter ones; the landing must suit
- * some body height between the two feet. If there is none because the
- * planned spot is a drop deeper than gMaxRise (or has no ground), the foot
- * steps out level over it, and the mech falls once it is there (when stepOff
- * is 1; gy is the body's height now). [] if neither, otherwise [start, end]. */
-function planStep(i: num, lead: num, lpos: vec, lyaw: num, feet: list, gy: num, stepOff: num, leadSide: num = 0): list {
-    line o = 3 - i;
-    line target = footHome(3 - 2 * i, lead, lpos, lyaw, leadSide);
-    line a = feet[i] as vec;
-    line oy = (feet[line o] as vec).y;
-    // first a spot whose toe is not jammed against a higher block, then any
-    for (line fussy of [1, 0]) {
-        for (line frac of [1, 1.3, 1.6, 2, 0.7, 0.45, 0.2]) {
-            line ex = line a.x + (line target.x - line a.x) * (line frac as num);
-            line ez = line a.z + (line target.z - line a.z) * (line frac as num);
-            line ey = groundUnder(line ex, line ez, lyaw, line a.y);
-            if (line ey > -900 && num.abs(line ey - line oy) <= global gMaxRise && (line fussy as num == 0 || toeJammed(line ex, line ey, line ez, lyaw) == 0)) {
-                line b = vec(line ex, line ey, line ez);
-                // it may step over anything it could climb, lifting to clear it
-                line hop = swingLift(line a, line b, lyaw);
-                if (line hop >= 0) {
-                    // the legs do not second-guess a step; only a forced one
-                    // (its ground went) must land where the leg reaches, at
-                    // some body height between here and there
-                    if (stepOff == 1) {
-                        return [line a, line b, line hop];
-                    }
-                    for (line k of [0, 0.5, 1]) {
-                        if (legFits(line b, lpos.x, lpos.z, lyaw, gy + (line ey - gy) * (line k as num)) == 1) {
-                            return [line a, line b, line hop];
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if (stepOff == 1) {
-        line g = groundUnder(line target.x, line target.z, lyaw, line a.y, 0);
-        if (line g < -900 || line g < line a.y - global gMaxRise) {
-            line b = vec(line target.x, line a.y, line target.z);
-            line hop = swingLift(line a, line b, lyaw);
-            if (line hop >= 0) {
-                return [line a, line b, line hop];
-            }
-        }
-    }
-    return [];
-}
-
-/** The body's leash: per leg [left, right], 1 if standing at (x, gy, z)
- * facing yaw would take that planted leg out of reach when it reaches its
- * foot now (at cpos facing cyaw; legFits). A leg already out never holds
- * the body, so it can come back. Otherwise the body does not wait on the
- * legs, and a leg that holds it steps next, out of turn. */
-function legsHold(feet: list, swT: list, x: num, z: num, yaw: num, gy: num, cpos: vec, cyaw: num): list {
-    line out = [0, 0];
-    repeat (line i to 2) {
-        if (swT[line i] as num < 0) {
-            line f = feet[line i] as vec;
-            if (legFits(line f, x, z, yaw, gy) == 0 && legFits(line f, cpos.x, cpos.z, cyaw, cpos.y) == 1) {
-                line out[line i] = 1;
-            }
-        }
-    }
-    return line out;
-}
-
 /** How far the body may rise to get past something its probes hit (m), as
  * on steep stairs, where it lags the steps under it. */
 function rideUp(): num {
-    return 1;
-}
-
-/** 1 if a leg can reach its foot at `foot` from a body at (x, gy, z) facing
- * yaw at all: within gMaxReach of its length and its hip and knee ranges (the
- * hard limits; a step does not check them unless forced). */
-function legFits(foot: vec, x: num, z: num, yaw: num, gy: num): num {
-    line mz = (foot.x - x) * (0 - num.sin(yaw)) + (foot.z - z) * num.cos(yaw);
-    line dy = global gAnkle.y + foot.y - gy + global gCrouch - global gHip.y;
-    line dz = line mz - global gHip.z;
-    if ((line dy * line dy + line dz * line dz) ** 0.5 > global gMaxReach * (global gL1 + global gL2)) {
-        return 0;
-    }
-    line ik = legIK(line dy, line dz);
-    repeat (line i to 2) {
-        line seg = global mSeg[global gSegs[line i]] as list;
-        line v = line ik[line i] as num;
-        if (line v < (line seg[6] as num) || line v > (line seg[7] as num)) {
-            return 0;
-        }
-    }
     return 1;
 }
 
@@ -671,6 +649,7 @@ function gaitFall(m: num) {
         global gSpeed[m] = line hv.dot(line F);
         global gSide[m] = line hv.dot(line L);
         global gJumpV[m] = vec(0, 0, 0);
+        legsPlant(m);
         mechLanded(m, 0 - line vy);
     } else {
         global gVy[m] = line vy;
@@ -688,6 +667,9 @@ function mechLanded(m: num, speed: num) {
 /** Every half second while idle: 1 if a foot of mech m has lost its ground
  * (so the gait has to run again). */
 function gaitNeedsWake(m: num): num {
+    if (global gLegs == 4) {
+        return spiderNeedsWake(m);
+    }
     line feet = global gFeet[m] as list;
     repeat (line i to 2) {
         if (footSupported(line feet[line i] as vec, global mYaw[m]) == 0) {
@@ -711,6 +693,15 @@ function gaitTick(m: num) {
     // parked without a pilot and with nothing to do
     line boardKneel = pilotBoardTick(m);
     global mHatch[m] = approach(global mHatch[m], global mHatchTo[m], hatchRate());
+    // a lid on its own joint (the spider's canopy, rear hull and gun mount)
+    // opens with the hatch, over the lid's range
+    line lidSeg = mechJointSeg("lid");
+    if (line lidSeg > 0) {
+        line ls = global mSeg[line lidSeg] as list;
+        line lj = global mJoint[m] as list;
+        line lj[line lidSeg] = global mHatch[m] * (line ls[6] as num) / hatchOpen();
+        global mJoint[m] = line lj;
+    }
     line kneelTo = 0;
     if (global mPilot[m] != "") {
         line kneelTo = line boardKneel;
@@ -725,45 +716,28 @@ function gaitTick(m: num) {
         line kneelTo = 1;
     }
     global gKneelTo[m] = line kneelTo;
+    // a spider walks its own way (spider.tc)
+    if (global gLegs == 4) {
+        spiderTick(m, line kneelTo);
+        return;
+    }
 
-    // gravity: a planted foot that lost its ground steps at once; with no step
-    // to take, or both feet gone, the mech falls
+    // gravity: with no foot standing on its block and no ground under it
+    // within reach, the mech falls (a foot that lost its block steps: legs.tc)
     if (global gFalling[m] == 0) {
         line gfeet = global gFeet[m] as list;
         line gswT = global gSwT[m] as list;
-        line planted = 0;
-        line lostAt = 0;
-        line lostN = 0;
+        line gtouch = global gTouch[m] as list;
+        line standing = 0;
         repeat (line i to 2) {
-            if (line gswT[line i] as num < 0) {
-                line planted += 1;
-                if (footSupported(line gfeet[line i] as vec, global mYaw[m]) == 0) {
-                    line lostN += 1;
-                    line lostAt = line i;
-                }
+            if (line gswT[line i] as num < 0 && line gtouch[line i] as num == 1 && footSupported(line gfeet[line i] as vec, global mYaw[m]) == 1) {
+                line standing += 1;
             }
         }
-        if (line lostN > 0) {
-            line fall = 1;
-            if (line lostN == 1 && line planted == 2) {
-                line st = planStep(line lostAt, 0, global mPos[m], global mYaw[m], line gfeet, (global mPos[m]).y, 0);
-                if (line st.len() == 3) {
-                    line swA = global gSwA[m] as list;
-                    line swB = global gSwB[m] as list;
-                    line swA[line lostAt] = line st[1];
-                    line swB[line lostAt] = line st[2];
-                    line swL = global gSwL[m] as list;
-                    line swL[line lostAt] = line st[3];
-                    global gSwL[m] = line swL;
-                    line gswT[line lostAt] = 0;
-                    global gLast[m] = line lostAt;
-                    global gSwA[m] = line swA;
-                    global gSwB[m] = line swB;
-                    global gSwT[m] = line gswT;
-                    line fall = 0;
-                }
-            }
-            if (line fall == 1) {
+        if (line standing == 0) {
+            line gp = global mPos[m];
+            line g = groundUnder(line gp.x, line gp.z, global mYaw[m], line gp.y, 0);
+            if (line g < -900 || line g < line gp.y - global gMaxRise) {
                 global gFalling[m] = 1;
                 global gVy[m] = 0;
                 global gSwT[m] = [-1, -1];
@@ -870,6 +844,12 @@ function gaitTick(m: num) {
         line wantT = 0;
         line wantSd = 0;
     }
+    // a foot left far behind holds the body back, and it does not turn (legs.tc)
+    if (legsBehind(m, line pos, vec(0, 1, 0), vec(0 - num.sin(line yaw), 0, num.cos(line yaw))) == 1) {
+        line wantS = line wantS * global lUncomf;
+        line wantSd = line wantSd * global lUncomf;
+        line wantT = 0;
+    }
     line speed = approach(global gSpeed[m], line wantS, global gAccel * line dt);
     line turn = approach(global gTurn[m], line wantT, global gTurnAccel * line dt);
     line strafe = approach(global gSide[m], line wantSd, global gAccel * line dt);
@@ -911,7 +891,8 @@ function gaitTick(m: num) {
                             line fy = line yaw + (line cy - line yaw) * line fr;
                             line fx = line pos.x + line cdx * line fr;
                             line fz = line pos.z + line cdz * line fr;
-                            line hl = legsHold(line feet, line swT, line fx, line fz, line fy, line pos.y + line up, line pos, line yaw);
+                            // (the legs no longer hold the body back here: legsBehind)
+                            line hl = [0, 0];
                             if (line hl[1] as num == 0 && line hl[2] as num == 0) {
                                 if ((line cl[2] as num == 0 || line cl[3] as num == 0) && line full > 0) {
                                     // sliding along a wall: only the free part of the move
@@ -997,98 +978,38 @@ function gaitTick(m: num) {
         line joints = setJoint(line joints, line s, approach(line joints[line s] as num, line want, line rate));
     }
 
-    // steps: the feet take turns. With both down, the one that did not step
-    // last goes once it is far enough from its home spot, to the first good
-    // landing spot among the planned step, a longer one and shorter ones; the
-    // one that just stepped waits for it (unless it is badly placed), so a
-    // step is never taken back
-    line lead = line speed * line swing * global gLead;
-    line leadS = line strafe * line swing * global gLead;
-    line limit = global gSettle;
-    if (num.abs(line speed) > 0.01 || num.abs(line turn) > 0.5 || num.abs(line strafe) > 0.01) {
-        line limit = global gStep;
-    }
-    if (line swT[1] as num < 0 && line swT[2] as num < 0 && global gKneel[m] == 0) {
-        line order = [1, 2];
-        if (global gLast[m] == 1) {
-            line order = [2, 1];
-        }
-        // (a foot whose leg holds the body back goes at once, out of turn)
-        if (line held[1] as num == 1) {
-            line order = [1, 2];
-        } else if (line held[2] as num == 1) {
-            line order = [2, 1];
-        }
-        line started = 0;
-        for (line io of line order) {
-            line i = line io as num;
-            if (line started == 0) {
-                line off = flatDist(line feet[line i] as vec, footHome(3 - 2 * line i, line lead, line pos, line yaw, line leadS));
-                if ((line off > line limit && (line i != global gLast[m] || line off > 2.5 * line limit)) || line held[line i] as num == 1) {
-                    line Ls = vec(num.cos(line yaw), 0, num.sin(line yaw));
-                    line st = planStep(line i, line lead, line pos + line F * (line speed * line swing) + line Ls * (line strafe * line swing), line yaw + line turn * line swing, line feet, line pos.y, 1, line leadS);
-                    if (line st.len() == 3) {
-                        line swA[line i] = line st[1];
-                        line swB[line i] = line st[2];
-                        line swT[line i] = 0;
-                        line swL = global gSwL[m] as list;
-                        line swL[line i] = line st[3];
-                        global gSwL[m] = line swL;
-                        global gLast[m] = line i;
-                        line started = 1;
-                    }
-                }
-            }
-        }
-    }
-
-    // swings: eased from start to end, lifting higher for a step up or down
+    // the legs (legs.tc): each finds its ground and steps when it has to
+    // (not while kneeling, getting down or up)
     line lift = [0, 0];
     line arcs = [0, 0];
+    line support = -999;
+    if (global gKneel[m] == 0) {
+        line F0 = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
+        line L0 = vec(num.cos(line yaw), 0, num.sin(line yaw));
+        line lt = legsTick(m, line pos, vec(0, 1, 0), line F0, line yaw, global mPos[m], global mYaw[m] - line yaw, line F0 * line speed + line L0 * line strafe);
+        line lift = line lt[1] as list;
+        line arcs = line lt[2] as list;
+        line support = line lt[3] as num;
+    }
+    line feet = global gFeet[m] as list;
+    line swT = global gSwT[m] as list;
     line rise = 0;
-    repeat (line i to 2) {
-        line t = line swT[line i] as num;
-        if (line t >= 0) {
-            // (hurrying while a leg holds the body back)
-            line hurry = 1;
-            if (line held[1] as num == 1 || line held[2] as num == 1) {
-                line hurry = 2;
-            }
-            line t = num.min(1, line t + line dt / line swing * line hurry);
-            line e = line t * line t * (3 - 2 * line t);
-            line a = line swA[line i] as vec;
-            line b = line swB[line i] as vec;
-            line feet[line i] = line a + (line b - line a) * line e;
-            line arc = num.sin(180 * line t);
-            line arcs[line i] = line arc;
-            line lift[line i] = ((global gSwL[m] as list)[line i] as num) * line arc;
-            line rise = num.max(line rise, line arc);
-            if (line t >= 1) {
-                line t = -1;
-            }
-            line swT[line i] = line t;
-        }
+    for (line ar of line arcs) {
+        line rise = num.max(line rise, line ar as num);
     }
 
-    // body height follows the feet (a swinging foot by where it will land),
-    // unless that would put a planted leg out of reach or a probe in a block;
-    // the bob and landing dip settle first so the height is checked with them
-    line ty = 0;
-    repeat (line i to 2) {
-        if (line swT[line i] as num >= 0) {
-            line ty += (line swB[line i] as vec).y / 2;
-        } else {
-            line ty += (line feet[line i] as vec).y / 2;
-        }
+    // body height: toward the support (the higher of the grounded targets
+    // and the ground under it), unless a probe would hit; the bob and
+    // landing dip settle first so the height is checked with them
+    line y2 = line pos.y;
+    if (line support > -900) {
+        line rate = (global gClimb + num.abs(line speed)) * line dt;
+        line y2 = line pos.y + num.clamp(line support * 0.35, 0 - line rate, line rate);
     }
-    line y2 = approach(line pos.y, line ty, (global gClimb + num.abs(line speed)) * line dt);
     line dip2 = approach(global gDip[m], 0, global gDipRate * line dt);
     line body2 = 0 - global gCrouch + global gBob * line rise - line dip2;
-    line hy = legsHold(line feet, line swT, line pos.x, line pos.z, line yaw, line y2, line pos, line yaw);
-    if (line hy[1] as num == 0 && line hy[2] as num == 0) {
-        if (probesClear(line pos.x, line pos.z, line yaw, line aim, line y2 + line body2) == 1) {
-            line pos = vec(line pos.x, line y2, line pos.z);
-        }
+    if (probesClear(line pos.x, line pos.z, line yaw, line aim, line y2 + line body2) == 1) {
+        line pos = vec(line pos.x, line y2, line pos.z);
     }
     if (probesClear(line pos.x, line pos.z, line yaw, line aim, line pos.y + line body2) == 1) {
         global gDip[m] = line dip2;
@@ -1097,10 +1018,6 @@ function gaitTick(m: num) {
     global mYaw[m] = line yaw;
     global mPos[m] = line pos;
     global gBodyY[m] = line bodyY;
-    global gFeet[m] = line feet;
-    global gSwT[m] = line swT;
-    global gSwA[m] = line swA;
-    global gSwB[m] = line swB;
 
     // legs: inverse kinematics to each foot
     line joints = gaitLegs(line joints, line feet, line swT, line pos, line yaw, line bodyY, line lift, line arcs);
@@ -1200,6 +1117,10 @@ function jumpPressure(m: num): num {
 /** Mech m leaps: up at gJumpSpeed (less with damaged legs), carrying its
  * speed, a little more forward; then it has to pressurize again. */
 function mechLeap(m: num) {
+    if (global gLegs == 4) {
+        spiderLeap(m);
+        return;
+    }
     line yaw = global mYaw[m];
     line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
     line L = vec(num.cos(line yaw), 0, num.sin(line yaw));

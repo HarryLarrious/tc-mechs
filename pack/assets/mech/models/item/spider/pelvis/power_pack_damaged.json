@@ -1,0 +1,165 @@
+{
+ "textures": {
+  "copper": "mech:item/mech/copper",
+  "gunmetal": "mech:item/mech/gunmetal",
+  "particle": "mech:item/mech/copper"
+ },
+ "elements": [
+  {
+   "from": [
+    7.0685,
+    6.4625,
+    11.4681
+   ],
+   "to": [
+    8.8605,
+    8.3185,
+    12.8121
+   ],
+   "rotation": {
+    "origin": [
+     7.9645,
+     7.3905,
+     12.1401
+    ],
+    "x": 0.251,
+    "y": -0.945,
+    "z": -3.349
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#gunmetal"
+    }
+   }
+  },
+  {
+   "from": [
+    7.3166,
+    8.2936,
+    11.7077
+   ],
+   "to": [
+    8.5966,
+    8.5176,
+    12.1877
+   ],
+   "rotation": {
+    "origin": [
+     7.9566,
+     8.4056,
+     11.9477
+    ],
+    "x": 1.453,
+    "y": 2.487,
+    "z": -0.775
+   },
+   "faces": {
+    "north": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#copper"
+    },
+    "south": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#copper"
+    },
+    "east": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#copper"
+    },
+    "west": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#copper"
+    },
+    "up": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#copper"
+    },
+    "down": {
+     "uv": [
+      0,
+      0,
+      16,
+      16
+     ],
+     "texture": "#copper"
+    }
+   }
+  }
+ ]
+}

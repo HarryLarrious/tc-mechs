@@ -113,12 +113,9 @@ function weaponsTick(m: num) {
     if (!line fireH && !line fireL) {
         return;
     }
-    line yaw = global mYaw[m];
-    line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
-    line U = vec(0, 1, 0);
-    line W = [line U.cross(line F), line U, line F];
+    line W = mechBasis(m);
     line segs = mechSegments(m);
-    line o = global mPos[m] + vec(0, global gBodyY[m], 0);
+    line o = mechOrigin(m);
     for (line g of global wGuns) {
         line gl = line g as list;
         line heavy = line gl[1] as num;

@@ -52,10 +52,19 @@
   "kneel_time": 1.5,
   "kneel_lift_l": 1.05,
   "kneel_lift_r": 0.315,
+  "legs": 2,
   "agile": 0.0,
   "strafe": 0.0,
   "jump_speed": 0.0,
-  "jump_cooldown": 0.0
+  "jump_cooldown": 0.0,
+  "trigger_rest": 0.21,
+  "trigger_move": 1.575,
+  "comfort": 3.15,
+  "leg_speed": 9.45,
+  "look_ahead": 0.6,
+  "cool_cross": 1.0,
+  "cool_same": 1.0,
+  "uncomfortable": 0.3
  },
  "kneel_pose": {
   "hip_l": 41.0,
@@ -10049,6 +10058,8 @@
    ]
   }
  ],
+ "legs": 2,
+ "spider_legs": [],
  "segments": [
   "pelvis",
   "thigh_l",

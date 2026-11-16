@@ -138,41 +138,49 @@ function partBroken(m: num, id: str): num {
  * hit points as a fraction of full. */
 function damageStatus(m: num) {
     line st = {};
-    // walking: motors (powered by the pack), pistons (fed by the tanks)
-    line motors = 0;
-    for (line id of ["hip_motor_l", "hip_motor_r", "knee_motor_l", "knee_motor_r", "ankle_motor_l", "ankle_motor_r"]) {
-        line motors += partFrac(m, line id as str) / 6;
-    }
-    line power = 0.4 + 0.6 * partFrac(m, "power_pack");
-    line pistons = 0;
-    for (line j of ["hip", "knee", "ankle"]) {
-        for (line s of ["l", "r"]) {
-            if (partBroken(m, "%var(j)_piston_cyl_%var(s)") == 0 && partBroken(m, "%var(j)_piston_rod_%var(s)") == 0) {
-                line pistons += 1 / 6;
+    if (global gLegs == 4) {
+        // a spider's legs (and its grip on walls)
+        line st = spiderLegStatus(m);
+    } else {
+        // walking: motors (powered by the pack), pistons (fed by the tanks)
+        line motors = 0;
+        for (line id of ["hip_motor_l", "hip_motor_r", "knee_motor_l", "knee_motor_r", "ankle_motor_l", "ankle_motor_r"]) {
+            line motors += partFrac(m, line id as str) / 6;
+        }
+        line power = 0.4 + 0.6 * partFrac(m, "power_pack");
+        line pistons = 0;
+        for (line j of ["hip", "knee", "ankle"]) {
+            for (line s of ["l", "r"]) {
+                if (partBroken(m, "%var(j)_piston_cyl_%var(s)") == 0 && partBroken(m, "%var(j)_piston_rod_%var(s)") == 0) {
+                    line pistons += 1 / 6;
+                }
             }
         }
-    }
-    line air = (2 - partBroken(m, "air_tank_l") - partBroken(m, "air_tank_r")) / 2 * (0.7 + 0.3 * num.min(1, partFrac(m, "compressor") * 2));
-    line mob = 0.25 + 0.5 * line motors * line power + 0.25 * line pistons * line air;
-    for (line s of ["l", "r"]) {
-        if (partBroken(m, "foot_%var(s)") == 1) {
-            line mob = line mob * 0.6;
+        line air = (2 - partBroken(m, "air_tank_l") - partBroken(m, "air_tank_r")) / 2 * (0.7 + 0.3 * num.min(1, partFrac(m, "compressor") * 2));
+        line mob = 0.25 + 0.5 * line motors * line power + 0.25 * line pistons * line air;
+        for (line s of ["l", "r"]) {
+            if (partBroken(m, "foot_%var(s)") == 1) {
+                line mob = line mob * 0.6;
+            }
         }
-    }
-    line legLost = 0;
-    for (line id of ["hip_mount_l", "hip_mount_r", "thigh_l", "thigh_r", "shin_l", "shin_r"]) {
-        if (partBroken(m, line id as str) == 1) {
-            line legLost = 1;
+        line legLost = 0;
+        for (line id of ["hip_mount_l", "hip_mount_r", "thigh_l", "thigh_r", "shin_l", "shin_r"]) {
+            if (partBroken(m, line id as str) == 1) {
+                line legLost = 1;
+            }
         }
+        if (line legLost == 1) {
+            line mob = 0;
+        }
+        line st["mob"] = num.clamp(line mob, 0, 1);
+        line st["legLost"] = line legLost;
     }
-    if (line legLost == 1) {
-        line mob = 0;
-    }
-    line st["mob"] = num.clamp(line mob, 0, 1);
-    line st["legLost"] = line legLost;
     // turret and aim
     line aim = 0;
-    if (partBroken(m, "waist_ring") == 0) {
+    if (global gLegs == 4) {
+        // (no turret: the whole body aims)
+        line aim = 1;
+    } else if (partBroken(m, "waist_ring") == 0) {
         line aim = 0.3 + 0.7 * partFrac(m, "waist_ring");
     }
     line st["aim"] = line aim;
@@ -205,6 +213,49 @@ function damageStatus(m: num) {
     line st["blind"] = partBroken(m, "cockpit");
     line st["integrity"] = mechIntegrity(m);
     global mStat[m] = line st;
+}
+
+/** A spider's walking status (damageStatus): mob (its legs' motors, powered
+ * by the pack, and its air kit; less per leg lost, and for broken feet),
+ * legLost (1 with two legs gone: it cannot walk), climb (1 while it can grip
+ * a wall: the air kit and all four legs), air (the air kit's health). */
+function spiderLegStatus(m: num): dict {
+    line st = {};
+    line motors = 0;
+    line lost = 0;
+    line feet = 1;
+    for (line t of ["lf", "lh", "rf", "rh"]) {
+        line motors += (partFrac(m, "coxa_%var(t)") + partFrac(m, "knee_motor_%var(t)")) / 8;
+        if (partBroken(m, "coxa_%var(t)") == 1 || partBroken(m, "femur_%var(t)") == 1 || partBroken(m, "tibia_%var(t)") == 1) {
+            line lost += 1;
+        }
+        if (partBroken(m, "claw_%var(t)") == 1) {
+            line feet = line feet * 0.85;
+        }
+    }
+    line power = 0.4 + 0.6 * partFrac(m, "power_pack");
+    line kit = 0;
+    if (partBroken(m, "air_kit") == 0) {
+        line kit = partFrac(m, "air_kit");
+    }
+    line mob = (0.3 + 0.7 * line motors * line power) * (0.75 + 0.25 * line kit) * line feet;
+    repeat (line i to line lost) {
+        line mob = line mob * 0.7;
+    }
+    line legLost = 0;
+    if (line lost >= 2) {
+        line legLost = 1;
+        line mob = 0;
+    }
+    line climb = 0;
+    if (line kit > 0 && line lost == 0) {
+        line climb = 1;
+    }
+    line st["mob"] = num.clamp(line mob, 0, 1);
+    line st["legLost"] = line legLost;
+    line st["climb"] = line climb;
+    line st["air"] = line kit;
+    return line st;
 }
 
 /** mStat[m][key]. */
@@ -484,6 +535,10 @@ function wreckMech(m: num) {
 /** Mech m landed at `speed` m/s: a hard landing (over 12 m/s) hurts the feet
  * and legs. */
 function damageLanding(m: num, speed: num) {
+    if (global gLegs == 4) {
+        spiderLanding(m, speed);
+        return;
+    }
     if (speed <= 12 || global mWreck[m] == 1) {
         return;
     }
@@ -493,6 +548,27 @@ function damageLanding(m: num, speed: num) {
         line sh = line share as list;
         for (line s of ["l", "r"]) {
             line id = (line sh[1] as str) + "_" + (line s as str);
+            damagePart(m, global mPartIdx[line id], line hurt * (line sh[2] as num), line down);
+        }
+    }
+    damagePart(m, global mPartIdx["pelvis"], line hurt * 0.08, line down);
+    select playersByName(global mPilot[m]);
+    selected.sendActionBar(s"<red><b>HARD LANDING</b></red> <gray>%var(speed) m/s");
+    select reset;
+}
+
+/** Spider m landed at `speed` m/s: it lands its own jumps (about 15.5 m/s)
+ * unhurt; harder (over 20 m/s) hurts its feet and legs. */
+function spiderLanding(m: num, speed: num) {
+    if (speed <= 20 || global mWreck[m] == 1) {
+        return;
+    }
+    line hurt = (speed - 20) * 22;
+    line down = vec(0, -1, 0);
+    for (line share of [["claw", 0.3], ["tibia", 0.2], ["knee_motor", 0.15], ["femur", 0.1]]) {
+        line sh = line share as list;
+        for (line t of ["lf", "lh", "rf", "rh"]) {
+            line id = (line sh[1] as str) + "_" + (line t as str);
             damagePart(m, global mPartIdx[line id], line hurt * (line sh[2] as num), line down);
         }
     }
