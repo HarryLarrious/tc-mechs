@@ -6,29 +6,30 @@
 // sequence, one state per mech in mBoard:
 //
 //   1  the player becomes their pilot body (the real player is hidden, see
-//      below) and walks to the front of the mech's front (right) foot, while
-//      the mech kneels, turns its turret ahead and opens the hatch
-//   2  the body climbs: onto the foot, hand over hand up the shin to the knee
-//      guard, up the torso front onto the roof, back along the roof to the
-//      hatch, sits on its side rim, lowers in, turns to face ahead and slides
-//      into the chair (pilotBoardPath, baked by pack/src/mech_pilot.py in the
-//      mech frame)
+//      below) and sprints to the outboard side of the mech's front (right)
+//      leg, while the mech kneels, turns its turret ahead and opens the hatch
+//   2  boarding, in a hurry (pilotBoardPath: mech/animations/board.json,
+//      baked by pack/src/mech_pilot.py in the mech frame): a leap to the knee
+//      piston's head, onto the knee, up onto the roof, a sprint to the hatch,
+//      feet first in and into the chair
 //   3  the hatch shuts
 //   4  the mech stands up
 //   0  piloting: W/S walk forward and back, A/D turn, look around to aim
 //      (the turret turns toward where they look, the guns tilt with their
 //      pitch), F to get out
 //
-// Getting out (F or @exit) runs it backwards: 5 the mech kneels, 6 the hatch
-// opens, 7 the body climbs out and down the front leg, and the real player
-// stands in front of the foot again. The mech then parks.
+// Getting out (F or @exit): 5 the mech kneels, 6 the hatch opens, 7 the body
+// gets out in a hurry (pilotExitPath: mech/animations/exit.json): up through
+// the hatch, a sprint along the roof, down to the knee and off it to the
+// ground, where the real player stands again. The mech then parks.
 //
 // The pilot's body is the player's own skin on six item displays (as the
 // rally driver): each holds the player's head, and the pack's core shader
 // draws a head as another body part when the display's brightness marks it.
-// The body is posed every tick from a figure pose: the hips, the lean, and
-// where the feet and hands are; every limb is a straight Minecraft limb from
-// its hip or shoulder to that point. The head looks where the player looks.
+// The body is posed every tick from a figure pose: the hips, the lean, the
+// facing, and per limb its joint, end and roll. Limbs are rigid Minecraft
+// limbs; the animations move them like floating hands and feet, so a joint
+// need not sit on the torso. The head looks where the player looks.
 // The real player rides the mech's seat entity (an interaction entity),
 // placed so their eye is at the model head's center; the body's displays ride
 // it too, so the client moves them exactly with the camera (teleported on
@@ -51,8 +52,10 @@ declare global mBody: list;
  * moves to. */
 declare global mHatch: list[num];
 declare global mHatchTo: list[num];
-/** The boarding timeline, parsed: per sample 16 numbers (pilotBoardPath). */
+/** The boarding and getting-out timelines, parsed: per sample 33 numbers
+ * (pilotBoardPath, pilotExitPath). */
 declare global pPath: list;
+declare global pExit: list;
 
 /** The hatch's open angle and how fast it moves (degrees per tick); the
  * walk to the mech (m per tick). */
@@ -65,25 +68,37 @@ function hatchRate(): num {
 }
 
 function walkStep(): num {
-    return 0.2;
+    return 0.3;
 }
 
-/** Parses the boarding timeline (loadMechData). */
-function loadPilotPath {
-    loadPilotPose();
-    global pPath = [];
-    for (line row of pilotBoardPath()) {
+/** A timeline's rows as lists of numbers. */
+function parsePath(rows: list): list {
+    line out = [];
+    for (line row of rows) {
         line nums = [];
         for (line w of (line row as str).split(" ")) {
             line nums.append(num.parse(line w as str));
         }
-        global pPath.append(line nums);
+        line out.append(line nums);
     }
+    return line out;
 }
 
-/** Ticks of the timeline from standing at the front foot to seated. */
+/** Parses the timelines (loadMechData). */
+function loadPilotPath {
+    loadPilotPose();
+    global pPath = parsePath(pilotBoardPath());
+    global pExit = parsePath(pilotExitPath());
+}
+
+/** Ticks of boarding (from the start beside the front leg to seated) and of
+ * getting out (from seated to the ground). */
 function boardTicks(): num {
     return (global pPath.len() - 1) * 20 / global pRate;
+}
+
+function exitTicks(): num {
+    return (global pExit.len() - 1) * 20 / global pRate;
 }
 
 /** The mech player `uuid` pilots (or is boarding or leaving), or 0. */
@@ -250,11 +265,15 @@ function pilotHideAllFrom {
  * the climb starts (on the ground, with the mech kneeling and its turret
  * ahead), and the way the body faces there (world, flat). */
 function pilotClimbSpot(m: num): vec {
+    return pilotGroundSpot(m, pilotClimbStart());
+}
+
+/** A spot `c` (x, z in the mech frame) on the ground under mech m (world). */
+function pilotGroundSpot(m: num, c: vec): vec {
     line yaw = global mYaw[m];
     line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
     line L = vec(num.cos(line yaw), 0, num.sin(line yaw));
-    line c = pilotClimbStart();
-    return global mPos[m] + line L * line c.x + line F * line c.z;
+    return global mPos[m] + line L * c.x + line F * c.z;
 }
 
 function pilotClimbFacing(m: num): vec {
@@ -333,14 +352,14 @@ function pilotBoardTick(m: num): num {
     } else if (line state == 6) {
         if (pilotClimbReady(m) == 1) {
             global mBoard[m] = 7;
-            global mBoardT[m] = boardTicks();
+            global mBoardT[m] = 0;
         }
     } else if (line state == 7) {
-        global mBoardT[m] -= 1;
-        if (global mBoardT[m] <= 0) {
-            // in front of the foot: the real player again
+        global mBoardT[m] += 1;
+        if (global mBoardT[m] >= exitTicks()) {
+            // on the ground in front of the mech: the real player again
             line pilot = global mPilot[m];
-            line g = pilotClimbSpot(m);
+            line g = pilotGroundSpot(m, pilotExitSpot());
             pilotRelease(m);
             select playersByName(line pilot);
             selected.teleport(loc(line g.x, line g.y, line g.z), keepRot="True");
@@ -384,14 +403,14 @@ function ease(t: num): num {
     return line c * line c * (3 - 2 * line c);
 }
 
-/** The boarding timeline at tick t, interpolated (33 numbers: hips, lean,
- * yaw, then per limb its joint, end and roll; see pilotBoardPath). */
-function pilotPathAt(t: num): list {
-    line x = num.clamp(t * global pRate / 20, 0, global pPath.len() - 1);
-    line i = num.min(num.floor(line x), global pPath.len() - 2);
+/** Timeline `path` at tick t, interpolated (33 numbers: hips, lean, yaw,
+ * then per limb its joint, end and roll; see pilotBoardPath). */
+function pilotPathAt(path: list, t: num): list {
+    line x = num.clamp(t * global pRate / 20, 0, path.len() - 1);
+    line i = num.min(num.floor(line x), path.len() - 2);
     line u = line x - line i;
-    line a = global pPath[line i + 1] as list;
-    line b = global pPath[line i + 2] as list;
+    line a = path[line i + 1] as list;
+    line b = path[line i + 2] as list;
     line out = [];
     repeat (line k to 33) {
         line p = line a[line k] as num;
@@ -441,7 +460,7 @@ function pilotRender(m: num, W: list, T: list, o: vec) {
         line tl = line tu.cross(line tf);
         // legs and arms swing with the distance walked, and still at the end
         line px = global pPx;
-        line swing = num.sin(line walked * 200) * 28;
+        line swing = num.sin(line walked * 150) * 40;
         if (line dist - line walked <= 0.05) {
             line swing = 0;
         }
@@ -457,12 +476,13 @@ function pilotRender(m: num, W: list, T: list, o: vec) {
         pilotFigure(m, line H, line tl, line tu, line tf, line limbs, line look);
         return;
     }
-    // the timeline: climbing in or out, else seated (its last sample)
-    line t = boardTicks();
-    if (line state == 2 || line state == 7) {
-        line t = global mBoardT[m];
+    // the timelines: getting in or out, else seated (boarding's last sample)
+    line row = pilotPathAt(global pPath, boardTicks());
+    if (line state == 2) {
+        line row = pilotPathAt(global pPath, global mBoardT[m]);
+    } else if (line state == 7) {
+        line row = pilotPathAt(global pExit, global mBoardT[m]);
     }
-    line row = pilotPathAt(line t);
     // body axes: leaning forward by a about its left, turned by the yaw y
     // about the torso's up (0 faces +Z, 90 faces +X)
     line a = line row[4] as num;

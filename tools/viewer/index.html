@@ -126,11 +126,14 @@ function poseFigure(row) {
   limb(figBoxes[4], 12, 12, 6);   // right leg
   limb(figBoxes[5], 5, 12, 6);    // left leg
 }
-const BOARD = spec.board_path, BOARD_RATE = 10;
-let boardT = (BOARD.length - 1) / BOARD_RATE, boardDir = 0;  // seconds into the timeline; +1 boarding, -1 getting out
+// boarding and getting out: two timelines, 20 samples a second; the figure
+// sits in the chair (the end of boarding) unless one plays
+const PATHS = { board: spec.board_path, exit: spec.exit_path }, BOARD_RATE = 20;
+let path = "board", boardT = (PATHS.board.length - 1) / BOARD_RATE, boardDir = 0;  // seconds into the timeline; boardDir 1 while one plays
 function boardRow(t) {
-  const x = Math.min(Math.max(t * BOARD_RATE, 0), BOARD.length - 1), i = Math.min(Math.floor(x), BOARD.length - 2), u = x - i;
-  return BOARD[i].map((v, k) => v + (BOARD[i + 1][k] - v) * u);
+  const P = PATHS[path];
+  const x = Math.min(Math.max(t * BOARD_RATE, 0), P.length - 1), i = Math.min(Math.floor(x), P.length - 2), u = x - i;
+  return P[i].map((v, k) => v + (P[i + 1][k] - v) * u);
 }
 
 // textures and materials
@@ -580,11 +583,11 @@ function partMatrix(P, segs) {
 for (const [id, dir] of [["board", 1], ["unboard", -1]]) document.getElementById(id).onclick = () => {
   document.getElementById("kneel").checked = true; document.getElementById("hatch").checked = true;
   document.getElementById("player").checked = true;
-  boardT = dir > 0 ? 0 : (BOARD.length - 1) / BOARD_RATE; boardDir = dir;
+  path = dir > 0 ? "board" : "exit"; boardT = 0; boardDir = 1;
 };
 
 // for poking at the scene from the browser console
-window.viewer = { THREE, scene, root, parts, spec, camera, controls, setBoard: t => { boardT = t; boardDir = 0; } };
+window.viewer = { THREE, scene, root, parts, spec, camera, controls, setBoard: (t, p = path) => { path = p; boardT = t; boardDir = 0; } };
 
 // ui
 const list = document.getElementById("list");
@@ -709,10 +712,10 @@ renderer.setAnimationLoop(() => {
   // boarding plays once kneeling with the hatch open
   if (boardDir !== 0 && kneelK >= 1 && hatchAngle <= -110) {
     boardT += boardDir * dt;
-    const end = (BOARD.length - 1) / BOARD_RATE;
+    const end = (PATHS[path].length - 1) / BOARD_RATE;
     if (boardT >= end || boardT <= 0) { boardT = Math.min(Math.max(boardT, 0), end); boardDir = 0; }
   }
-  document.getElementById("boardInfo").textContent = boardDir ? (boardDir > 0 ? "boarding" : "getting out") + " " + boardT.toFixed(1) + " s" : "";
+  document.getElementById("boardInfo").textContent = boardDir ? (path === "board" ? "boarding" : "getting out") + " " + boardT.toFixed(1) + " s" : "";
   // parked: blend into (or out of) the kneel over kneel_time
   kneelK = approach(kneelK, document.getElementById("kneel").checked ? 1 : 0, dt / g_.kneel_time);
   if (kneelK > 0) {

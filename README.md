@@ -19,7 +19,7 @@ The first mech walks on two legs and carries a turret torso with two heavy side 
 | [pack/src/mech_lib.py](pack/src/mech_lib.py) | Shared code: materials, textures, cuboid helpers, model and item writers |
 | [tools/viewer/](tools/viewer/) | 3D viewer: pose the joints, play a walk cycle, explode or break parts |
 | [tools/animator/](tools/animator/) | Animation editor: pose the pilot on the kneeling mech key by key, play it, save drafts |
-| [mech/animations/](mech/animations/) | The pilot's animations (boarding), baked into the game by `mech_pilot.py` |
+| [mech/animations/](mech/animations/) | The pilot's animations (getting in and getting out), baked into the game by `mech_pilot.py` |
 | [tools/build_pack.py](tools/build_pack.py) | Validates, zips and publishes the pack to the `pack-dist` branch, and points `tc/pack.tc` at it |
 | [tc/](tc/) | Terracotta code for the plot: spawning, drawing and posing mechs (`mech.tc`), the procedural walk (`gait.tc`) over blocks (`terrain.tc`), piloting (`pilot.tc`), firing (`weapons.tc`), commands, the pack; `mech_data.tc` is generated |
 | [tools/gait_check.py](tools/gait_check.py) | The reference model of the procedural walk, with its checks (IK round trip, joint ranges at every speed and turn rate, test courses of steps, walls and drops) |
@@ -70,8 +70,8 @@ In game (play mode). Joining sets your third-person camera 15 blocks back (the `
 | `@turn [deg/s]` | The nearest mech turns on the spot (30°/s by default, up to 40; + right) |
 | `@stop` | The nearest mech stops; its feet settle under it and it kneels (parked) |
 | `@follow` | The nearest mech walks after you and aims its torso and guns at you; `@follow` again or `@stop` ends it |
-| `@board` | Boards the nearest free mech within 30 blocks: you walk to it while it kneels and opens its hatch, jump to its knee piston, climb onto its knee and up onto the roof, and in through the hatch, then it stands up. W/S walk, A/D turn, look to aim the turret and guns, hold right click for the cannons, left click for the machine guns, F gets out |
-| `@exit` | Gets out of the mech you pilot (same as F): it kneels and you climb out and down its front leg |
+| `@board` | Boards the nearest free mech within 30 blocks: you sprint to it while it kneels and opens its hatch, leap to its knee piston, scramble up onto the roof and drop in through the hatch, then it stands up. W/S walk, A/D turn, look to aim the turret and guns, hold right click for the cannons, left click for the machine guns, F gets out |
+| `@exit` | Gets out of the mech you pilot (same as F): it kneels, and you spring out of the hatch, sprint along the roof and jump down off its knee |
 | `@pose JOINT DEGREES` | Moves a joint on the nearest mech: `hip_l`, `knee_l`, `ankle_l`, `hip_r`, `knee_r`, `ankle_r`, `waist`, `elev_hl`, `elev_hr`, `elev_ll`, `elev_lr` |
 | `@pose reset` | Puts the nearest mech back in its rest pose |
 | `@clearmechs` | Removes every mech |
