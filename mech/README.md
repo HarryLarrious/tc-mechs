@@ -237,36 +237,39 @@ smoothing, as there is for the rally car's wheels.
 - **Tilt:** a planted foot tilts to the slope between the block tops under
   its heel and toe (each taken within 1 m of the foot's height, at most 30°).
   The tilt only changes how the foot looks.
+- **Taking turns:** with both feet down, the foot that did not step last
+  steps once it is far enough from its home spot. The foot that just stepped
+  waits for the other one (unless it is badly placed), so a step is never
+  taken back, and a step once started always lands where it was aimed.
 - **Choosing a step:** the foot tries the planned landing spot, then longer
-  steps, then shorter ones. A longer step gets the whole foot onto a step,
-  and it brings the trailing foot up a tall step that the body is waiting
-  at. It takes the first spot that meets every test, preferring a spot where
-  the toe is not jammed against a block more than half a block higher (that
+  steps, then shorter ones. A longer step gets the whole foot onto a step.
+  It takes the first spot that meets every test, preferring a spot where the
+  toe is not jammed against a block more than half a block higher (that
   makes a foot at the base of a tall step go up onto it):
   - it has ground,
   - it is within 3.2 m (three blocks) above or below the other foot,
   - the ground under the foot's middle along its way is nothing higher than
-    both ends, checked every half block,
-  - the leg can reach it at some body height between the two feet, with
-    every joint at least 1° inside its range and the leg under 97% of its
-    length.
+    both ends, checked every half block.
+
+  The legs do not second-guess a step: the leg follows the foot by IK. Only
+  a forced step (a planted foot that lost its ground) must land where the leg
+  can reach, at some body height between the feet.
 
   A step up or down lifts the foot higher, by 0.6 × the height difference.
   The mech climbs steps of up to three blocks, and a 4-block ledge is a wall
   to it. A drop deeper than three blocks is walked off (see Gravity).
-- **Body height:** it follows the feet at 2.1 m/s, with a swinging foot
-  counted where it will land, so the body is already moving up or down a
-  tall step as the foot gets there. It stops short of any height where a
-  planted leg would go out of reach (a leg already out of reach never stops a
-  move that helps it), or where a probe would hit a block.
+- **Body:** it moves and turns as commanded and does not wait on the legs.
+  Only its probes (below) and a leash stop it: it never takes a planted leg
+  past 97% of its length or out of its hip's and knee's ranges (a leg that is
+  already out never stops a move, so it can come back). Its height follows
+  the feet at 2.1 m/s, with a swinging foot counted where it will land, so the
+  body is already moving up or down a tall step as the foot gets there.
 - **Hitbox:** 32 collision probe points (`PROBES` in `mech_lib.py`) on the
   hips, knees, shins, turret hull and heavy guns. The body probes turn with
   the heading, and the hull and gun probes turn with the torso. A move or turn
   that would put any probe in a solid block is tried along one axis only, so
   the mech slides along a wall. If neither axis works, it stops. The torso
-  will not turn its guns into a wall. The body also never moves so far that a
-  planted leg would overstretch, so a mech whose feet can't go on stops and
-  waits.
+  will not turn its guns into a wall.
 
 ### Gravity
 
@@ -315,9 +318,13 @@ hole under the mech to watch it fall.
 
 A mech without a pilot and with nothing to do goes down on its left knee
 (`KNEEL_POSE` in `pack/src/mech_lib.py`, `mechKneelPose()` in game). It first
-stops and lets its feet settle. Then over `kneel_time` (1.5 s) the leg
-joints blend from the walk's inverse kinematics into the kneel pose and the
-body drops `kneel_drop` (1.57 m). The right foot stays flat on the ground
+stops and lets its feet settle. Then over `kneel_time` (1.5 s) the body
+drops `kneel_drop` (3.3 m) and each ankle moves on an arc (`kneel_lift_l`,
+`kneel_lift_r`) from where it stands to where the kneel has it, the leg
+following by IK and the foot turning to the kneel's pitch. Blending the joint
+angles straight into the kneel would drive the feet through the ground on
+the way; the arcs' heights were checked offline against every part of the
+leg. The right foot stays flat on the ground
 ahead and the left knee guard rests just above the ground. `@walk`, `@turn`
 and `@follow` make it stand up first, the same way back. A new mech spawns
 kneeling.

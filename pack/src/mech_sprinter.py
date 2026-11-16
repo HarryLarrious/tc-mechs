@@ -48,9 +48,15 @@ MASS = 0.45
 HIP = (0.0, 3.30, 0.00)
 KNEE = (0.0, 2.12, 0.66)
 ANKLE = (0.0, 0.58, -0.42)
-SEGMENTS = W.SEGMENTS
-JOINTS = {"hip": (HIP, "pelvis", "thigh"), "knee": (KNEE, "thigh", "shin"), "ankle": (ANKLE, "shin", "foot")}
-JOINT_CAP = {"hip": 110, "knee": 80, "ankle": 80}
+# More freedom than the walker's legs: the hip also rolls the whole leg out
+# or in (about Z, so it can step sideways), and the ankle rolls the foot back
+# level. Roll angles swing the left leg outward; the right leg's are mirrored.
+SEGMENTS = ("pelvis", "hipr", "thigh", "shin", "talus", "foot")
+JOINTS = {"hip_roll": (HIP, "pelvis", "hipr", "z"), "hip": (HIP, "hipr", "thigh"), "knee": (KNEE, "thigh", "shin"),
+          "ankle": (ANKLE, "shin", "talus"), "ankle_roll": (ANKLE, "talus", "foot", "z")}
+JOINT_CAP = {"hip_roll": 28, "hip": 110, "knee": 80, "ankle": 80, "ankle_roll": 28}
+ROLL_RANGES = {"hip_roll": [-12, 28], "ankle_roll": [-28, 12]}   # out 28, in 12 (the foot rolls back the other way)
+PISTON_JOINT = {"hip": "hip", "knee": "knee", "ankle": "ankle"}
 
 L_TH = math.dist(HIP, KNEE)
 T_TH = norm(sub(KNEE, HIP))
@@ -73,7 +79,7 @@ def sh(s, off=0.0, x=0.0):
 
 
 PISTONS = {
-    "hip":   (((0.0, 3.76, -0.62), "pelvis"), (th(0.50, -0.19), "thigh")),
+    "hip":   (((0.0, 3.76, -0.62), "hipr"), (th(0.50, -0.19), "thigh")),
     "knee":  ((th(0.40, 0.18, 0.25), "thigh"), (sh(0.50, 0.22, 0.25), "shin")),
     "ankle": ((sh(0.42, -0.17), "shin"), ((0.0, 0.98, -0.78), "foot")),
 }
@@ -170,31 +176,54 @@ def part(p: Part, elems: list[Elem]) -> Part:
     return p
 
 
+ROLL_Z = -0.30                # the hip's roll bearings, behind and in front of the hip hub
+
+
 def hip_mount():
+    """The flange under the pelvis, with two hangers down to the roll
+    bearings (front and back, on the hip's roll axis)."""
     y = HIP[1]
-    e = [box((-0.26, y + 0.40, -0.26), (0.26, y + 0.50, 0.26), "steel", dent=False)]  # mounting flange
+    e = [box((-0.26, y + 0.40, -0.40), (0.26, y + 0.50, 0.40), "steel", dent=False)]  # mounting flange
     for bx in (-0.20, 0.20):
-        for bz in (-0.20, 0.20):
+        for bz in (-0.33, 0.33):
             e += prism((bx, y + 0.515, bz), "y", 0.026, 0.03, 6, "darksteel", dent=False)
-    for s in (1, -1):
-        x0, x1 = sorted((s * 0.15, s * 0.22))
-        e.append(box((x0, y, -0.18), (x1, y + 0.42, 0.18), "gunmetal", dent=False))   # yoke cheeks
-        e += prism((s * 0.185, y, 0.0), "x", 0.18, 0.07, 6, "gunmetal", dent=False)    # hexagonal bosses
+    for z in (ROLL_Z, -ROLL_Z):
+        e.append(box((-0.07, y + 0.10, z - 0.05), (0.07, y + 0.40, z + 0.05), "gunmetal", dent=False))  # hanger
+        e += prism((0.0, y, z), "z", 0.15, 0.10, 8, "darksteel", dent=False)           # roll bearing housing
+        e += prism((0.0, y, z + math.copysign(0.06, z)), "z", 0.09, 0.03, 8, "hazard", dent=False)
+    e += prism((0.0, y, -ROLL_Z + 0.13), "z", 0.10, 0.10, 8, "motor", dent=False)      # roll motor (front)
+    e += prism((0.0, y, -ROLL_Z + 0.19), "z", 0.07, 0.02, 8, "steel", dent=False)
+    part(Part("hip_mount", "Hip mount (flange, roll bearings and motor)", "structure", None, "pelvis", HIP,
+              120, 400, "fail", "Cracks: the whole leg sags and the hip motor loses torque; at 0 the leg is lost",
+              damaged=False), e)
+
+
+def hip_yoke():
+    """The yoke that rolls on the hip mount's bearings and carries the hip's
+    pitch axis and the hip piston's anchor."""
+    y = HIP[1]
+    e = []
+    for z in (ROLL_Z, -ROLL_Z):
+        e += prism((0.0, y, z * 0.62), "z", 0.11, 0.08, 8, "gunmetal", dent=False)     # roll hubs
+    e.append(box((-0.22, y + 0.20, -0.22), (0.22, y + 0.30, 0.22), "gunmetal", dent=False))  # yoke bridge
+    for s_ in (1, -1):
+        x0, x1 = sorted((s_ * 0.15, s_ * 0.22))
+        e.append(box((x0, y, -0.18), (x1, y + 0.30, 0.18), "gunmetal", dent=False))   # yoke cheeks
+        e += prism((s_ * 0.185, y, 0.0), "x", 0.18, 0.07, 6, "gunmetal", dent=False)  # hexagonal bosses
     e += prism((-0.26, y, 0.0), "x", 0.13, 0.08, 6, "darksteel", dent=False)          # inboard bearing cap
     a, _ = PISTONS["hip"]
     A = a[0]
-    e.append(beam((0.0, y + 0.44, -0.18), add(A, (Y, 0.05), (Z, 0.04)), 0.16, 0.08, "gunmetal", dent=False))
-    e += W.clevis(A, norm(sub((0.0, y + 0.44, -0.18), A)), 0.14, gap=0.06)
+    e.append(beam((0.0, y + 0.28, -0.18), add(A, (Y, 0.05), (Z, 0.04)), 0.16, 0.08, "gunmetal", dent=False))
+    e += W.clevis(A, norm(sub((0.0, y + 0.28, -0.18), A)), 0.14, gap=0.06)
     e += W.pin(A, 0.16)
-    part(Part("hip_mount", "Hip mount (flange, yoke, piston anchor)", "structure", None, "pelvis", HIP,
-              120, 400, "fail", "Cracks: the whole leg sags and the hip motor loses torque; at 0 the leg is lost",
-              damaged=False), e)
+    part(Part("hip_yoke", "Hip yoke (rolls the leg out and in; hip piston anchor)", "structure", "hip_mount", "hipr", HIP,
+              100, 300, "fail", "Cracks: the leg loses its roll and the hip motor its torque", damaged=False), e)
 
 
 def hip_motor():
     e = W.motor(HIP, 1, 0.24, 0.18, 3, sides=12)
     e.append(box((0.30, HIP[1] + 0.22, -0.10), (0.42, HIP[1] + 0.32, 0.06), "darksteel", dent=False))  # junction box
-    part(Part("hip_motor", "Hip motor (servo)", "actuator", "hip_mount", "pelvis", HIP,
+    part(Part("hip_motor", "Hip motor (servo)", "actuator", "hip_yoke", "hipr", HIP,
               85, 160, "fail", "Loses torque with HP: slower, shorter strides; at 0 the hip only moves on its piston",
               shield=["hip_guard"], damaged=False), e)
 
@@ -249,7 +278,7 @@ def thigh():
     e += W.pin(a[0], 0.18)
     e.append(beam(th(0.15, 0.03, -0.17), th(L_TH - 0.20, 0.03, -0.17), 0.04, 0.04, "hose"))
     e.append(beam(th(L_TH - 0.20, 0.03, -0.17), add(KNEE, (Y, 0.18), (X, -0.25)), 0.04, 0.04, "hose"))
-    part(Part("thigh", "Thigh frame", "structure", "hip_mount", "thigh", HIP,
+    part(Part("thigh", "Thigh frame", "structure", "hip_yoke", "thigh", HIP,
               260, 320, "fail", "Bends: the knee runs out of line and the stride shortens; at 0 the leg collapses",
               shield=["thigh_armor"]), e)
 
@@ -417,7 +446,7 @@ def foot_armor():
 
 def build_leg() -> list[Part]:
     LEG.clear()
-    hip_mount(); hip_motor(); hip_guard(); air_tank()
+    hip_mount(); hip_yoke(); hip_motor(); hip_guard(); air_tank()
     thigh(); thigh_armor(); knee_motor()
     shin(); knee_guard(); shin_armor(); ankle_motor()
     foot(); foot_armor()
@@ -830,6 +859,8 @@ GAIT.update({
     "fall_drift": 3.0,
     "kneel_drop": 1.73,
     "kneel_time": 1.1,
+    "kneel_lift_l": 0.75,
+    "kneel_lift_r": 0.25,
     "agile": 1.0,        # steers where the pilot looks, strafes, kneels on Shift, jumps on Space
     "strafe": 0.55,
     "jump_speed": 11.5,  # 4.4 m up, landing under the 12 m/s that hurts
@@ -850,8 +881,9 @@ PROBES = (
 def sprinter() -> dict:
     leg = build_leg()
     torso_p, guns, torso_segs, torso_joints, muz = torso()
-    ranges = W.joint_ranges(PISTONS, JOINTS, JOINT_CAP)
-    segments, joints = W.leg_joints(ranges, HIP_X, JOINTS)
+    ranges = W.joint_ranges(PISTONS, JOINTS, JOINT_CAP, SEGMENTS, PISTON_JOINT)
+    ranges.update(ROLL_RANGES)
+    segments, joints = W.leg_joints(ranges, HIP_X, JOINTS, SEGMENTS)
     tints = [0xD9D4C7, 0xC8232C]                       # bone white, racing red
     return {
         "name": "sprinter", "label": "Sprinter", "folder": "sprinter/", "spec_dir": "mech/sprinter",

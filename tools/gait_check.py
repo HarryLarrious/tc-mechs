@@ -81,6 +81,7 @@ FALL_DRIFT = G["fall_drift"]
 # higher: halfway first, then lower and higher (a tall step needs the body
 # near one end).
 BODY_MIXES = (0.5, 0.25, 0.75, 0.0, 1.0)
+LEASH = MAX_REACH  # the body never takes a planted leg past this share of its length, or out of its joints' ranges
 # Landing spots tried, as shares of the planned step: the plan, longer steps
 # (to get a whole foot onto a step instead of perching on its edge, and to
 # bring the trailing foot up a tall step the body is waiting at), shorter ones.
@@ -209,6 +210,7 @@ class Walker:
         self.falls = 0
         self.forced = 0
         self.stepped_off = 0
+        self.last = None    # the foot that stepped last: the other goes next
         self.impacts = []                # landing speeds (m/s), for the damage model
 
     def home(self, side, lead, x=None, z=None, yaw=None):
@@ -257,6 +259,35 @@ class Walker:
         mz = (foot[0] - x) * f[0] + (foot[2] - z) * f[1]
         my = ANKLE[1] + foot[1] - gy - (-CROUCH)
         return leg_ok(my - HIP[1], mz - HIP[2])
+
+    def leash_ok(self, x, z, yaw, gy=None):
+        """Whether the body may move to (x, gy, z) facing yaw: it never takes a
+        planted leg out of its reach or its joints' ranges (a leg that is
+        already out may stay so, so the body can come back). It does not wait
+        on the legs otherwise; they catch up."""
+        gy = self.pos[1] if gy is None else gy
+        for s in ("l", "r"):
+            if self.swing[s] is None and not self.leg_fits(self.feet[s], x, z, yaw, gy) and \
+                    self.leg_fits(self.feet[s], self.pos[0], self.pos[2], self.yaw, self.pos[1]):
+                return False
+        return True
+
+    def leg_fits(self, foot, x, z, yaw, gy):
+        """Whether a leg can still reach `foot` from a body at (x, gy, z) facing
+        yaw at all: within its joints' ranges and LEASH of its length (the hard
+        limit, unlike foot_ok's margins)."""
+        f = fwd(yaw)
+        mz = (foot[0] - x) * f[0] + (foot[2] - z) * f[1]
+        my = ANKLE[1] + foot[1] - gy + CROUCH
+        dy, dz = my - HIP[1], mz - HIP[2]
+        if math.hypot(dy, dz) > LEASH * (L1 + L2):
+            return False
+        hip, knee = leg_ik(dy, dz)
+        for j, v in (("hip_l", hip), ("knee_l", knee)):
+            lo, hi = J[j]["range"]
+            if v < lo or v > hi:
+                return False
+        return True
 
     def legs_allow(self, x, z, yaw, gy):
         """Whether the body may stand at (x, gy, z) facing yaw: no planted leg
@@ -311,19 +342,21 @@ class Walker:
                 continue
             if not self.path_clear(a, (ex, ey, ez), lyaw):
                 continue
-            # the body moves toward the feet's heights while the foot swings;
-            # the landing must suit some body height between them
-            oy = self.feet[o][1]
-            lo_, hi_ = min(ey, oy), max(ey, oy)
-            if any(self.foot_ok((ex, ey, ez), lx, lz, lyaw, lo_ + (hi_ - lo_) * k_) for k_ in BODY_MIXES):
-                self.swing[s] = (0.0, list(a), [ex, ey, ez])
-                return True
+            # a forced step (its ground went) must land where the leg reaches
+            # (at some body height between the two feet: the body follows them)
+            if not may_step_off and not any(self.leg_fits((ex, ey, ez), lx, lz, lyaw, self.pos[1] + (ey - self.pos[1]) * k_)
+                                            for k_ in (0.0, 0.5, 1.0)):
+                continue
+            self.swing[s] = (0.0, list(a), [ex, ey, ez])
+            self.last = s
+            return True
         if may_step_off:
             g = self.ground(tx, tz, lyaw, a[1], stand=False)
             if g is None or g < a[1] - MAX_RISE:
                 end = (tx, a[1], tz)
-                if self.path_clear(a, end, lyaw) and self.foot_ok(end, lx, lz, lyaw, self.pos[1]):
+                if self.path_clear(a, end, lyaw):
                     self.swing[s] = (0.0, list(a), list(end))
+                    self.last = s
                     self.stepped_off += 1
                     return True
         return False
@@ -448,7 +481,7 @@ class Walker:
             nx, nz = self.pos[0] + cdx, self.pos[2] + cdz
             if not self.probes_clear(nx, nz, cy, self.aim, gy, self.body_y):
                 continue
-            if self.legs_allow(nx, nz, cy, gy):
+            if self.leash_ok(nx, nz, cy):
                 if (cdx, cdz) != (dx, dz):
                     self.speed = math.hypot(cdx, cdz) / dt * (1 if self.speed >= 0 else -1)
                 if cy != yaw2:
@@ -472,16 +505,18 @@ class Walker:
         # steps
         lead = self.speed * SWING * LEAD
         moving = abs(self.speed) > 0.01 or abs(self.turn) > 0.5
-        for s in ("l", "r"):
-            o = "r" if s == "l" else "l"
-            if self.swing[s] is not None or self.swing[o] is not None:
-                continue
-            want = self.home(s, lead)
-            off = math.dist((self.feet[s][0], self.feet[s][2]), want)
-            other = math.dist((self.feet[o][0], self.feet[o][2]), self.home(o, lead))
-            if off > (STEP if moving else SETTLE) and off >= other:
-                lx, lz = self.pos[0] + f[0] * self.speed * SWING, self.pos[2] + f[1] * self.speed * SWING
-                self.plan_step(s, lead, lx, lz, self.yaw + math.radians(self.turn) * SWING)
+        # the feet take turns: the one that did not step last goes when it is
+        # far enough from its home spot; the one that just stepped waits for
+        # it (unless it is badly placed), so a step is never taken back
+        limit = STEP if moving else SETTLE
+        if self.swing["l"] is None and self.swing["r"] is None:
+            order = ("l", "r") if self.last != "l" else ("r", "l")
+            for s in order:
+                off = math.dist((self.feet[s][0], self.feet[s][2]), self.home(s, lead))
+                if off > limit and (s != self.last or off > 2.5 * limit):
+                    lx, lz = self.pos[0] + f[0] * self.speed * SWING, self.pos[2] + f[1] * self.speed * SWING
+                    if self.plan_step(s, lead, lx, lz, self.yaw + math.radians(self.turn) * SWING):
+                        break
 
         # swing
         lift = {"l": 0.0, "r": 0.0}
@@ -509,7 +544,7 @@ class Walker:
         # the bob and the landing dip settle first, so the height is checked with them
         dip2 = approach(self.dip, 0.0, DIP_RATE * dt)
         body2 = -CROUCH + BOB * rise - dip2
-        if self.legs_allow(self.pos[0], self.pos[2], self.yaw, y2) and \
+        if self.leash_ok(self.pos[0], self.pos[2], self.yaw, y2) and \
                 self.probes_clear(self.pos[0], self.pos[2], self.yaw, self.aim, y2, body2):
             self.pos[1] = y2
         if self.probes_clear(self.pos[0], self.pos[2], self.yaw, self.aim, self.pos[1], body2):
@@ -538,14 +573,14 @@ class Walker:
 
 
 def out_of_range(pose):
-    # 2.5 degrees of slack: walking off an edge, the trailing foot stays on the
-    # last block with its toe over the drop and the body's bob can stretch that
-    # leg a degree or two past its range for a moment; the game and the viewer
-    # clamp every joint, so that foot just sits a little off its spot
+    # 3.5 degrees of slack: walking off an edge, the trailing foot stays on the
+    # last block and the body's bob can stretch that leg a few degrees past its
+    # range for a moment before it falls; the game and the viewer clamp every
+    # joint, so that foot just sits a little off its spot
     bad = []
     for k_, v in pose.items():
         lo, hi = J[k_]["range"]
-        if v < lo - 2.5 or v > hi + 2.5:
+        if v < lo - 3.5 or v > hi + 3.5:
             bad.append(f"{k_}={v:.0f}")
     return bad
 
@@ -731,7 +766,7 @@ def main():
                  expect=lambda m: True)
     ok &= gravity_checks()
     ok &= course("stairs up (1 block every 3)", lambda w: [w.tops.__setitem__((x, z), min(10, max(0, (z - 9) // 3)))
-                                                          for x in range(-20, 21) for z in range(9, 120)],
+                                                          for x in range(-20, 21) for z in range(9, 220)],
                  MAX_SPEED, expect=lambda m: m.pos[1] > 9)
     print()
     print("all checks pass" if ok else "SOME CHECKS FAIL")

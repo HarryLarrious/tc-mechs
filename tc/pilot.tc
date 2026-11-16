@@ -634,10 +634,21 @@ playerevent vehicleJump {
     }
 }
 
-/** Shift in mech m (agile types): down on one knee, or back up. */
+/** Shift in mech m (agile types): down on one knee, or back up. A held
+ * Shift (its event repeats) counts once, and nothing changes while it is
+ * still going down or getting up. */
 function mechKneelKey(m: num) {
     useMech(m);
-    if (global gAgile != 1 || global gFalling[m] == 1 || global mWreck[m] == 1) {
+    line now = game.ticksSinceStartup;
+    line held = line now - global gHoldT[m] <= 5;
+    global gHoldT[m] = line now;
+    if (line held || global gAgile != 1 || global gFalling[m] == 1 || global mWreck[m] == 1) {
+        return;
+    }
+    if (global gKneel[m] > 0 && global gKneel[m] < 1) {
+        return;
+    }
+    if (global gHold[m] == 1 && global gKneel[m] < 1) {
         return;
     }
     global gHold[m] = 1 - global gHold[m];

@@ -198,7 +198,8 @@ let bob = 0;  // body height change that keeps the lower foot on the ground
 const rad = d => d * Math.PI / 180;
 function rotAbout(p, deg, axis) {
   const t = new THREE.Matrix4().makeTranslation(p[0], p[1], p[2]);
-  const r = axis === "y" ? new THREE.Matrix4().makeRotationY(rad(deg)) : new THREE.Matrix4().makeRotationX(rad(deg));
+  const r = axis === "y" ? new THREE.Matrix4().makeRotationY(rad(deg)) : axis === "z" ? new THREE.Matrix4().makeRotationZ(rad(deg))
+    : new THREE.Matrix4().makeRotationX(rad(deg));
   return t.multiply(r).multiply(new THREE.Matrix4().makeTranslation(-p[0], -p[1], -p[2]));
 }
 let spin = 0;  // heavy barrel cluster angle
@@ -245,6 +246,11 @@ const wrapA = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) 
 const T0 = [KNEE[1] - HIP[1], KNEE[2] - HIP[2]], S0 = [ANKLE[1] - KNEE[1], ANKLE[2] - KNEE[2]];
 const L1 = Math.hypot(...T0), L2 = Math.hypot(...S0);
 const PHI0 = wrapA(angYZ(...S0) - angYZ(...T0)), BEND = PHI0 > 0 ? 1 : -1;
+/** Where the ankle is from the hip, [dy, dz], with the hip and knee at these angles (degrees). */
+function legFK(hip, knee) {
+  const a = angYZ(...T0) + hip * Math.PI / 180, b = angYZ(...T0) + PHI0 + (hip + knee) * Math.PI / 180;
+  return [L1 * Math.cos(a) + L2 * Math.cos(b), L1 * Math.sin(a) + L2 * Math.sin(b)];
+}
 /** Hip and knee angles (degrees) that put the ankle at (dy, dz) from the hip. */
 function legIK(dy, dz) {
   const d = Math.min(Math.max(Math.hypot(dy, dz), Math.abs(L1 - L2) + 0.01), L1 + L2 - 0.01);
@@ -373,24 +379,37 @@ function planStep(s, lead, lx, lz, lyaw, mayStepOff = true) {
       const f = fwdOf(lyaw), t = colTop(ex + f[0] * g_.foot_toe, ez + f[1] * g_.foot_toe, ey + G.UP, G.UP + G.DOWN);
       if (t !== null && t > ey + 0.5) continue;
     }
-    const b = [ex, ey, ez], lo = Math.min(ey, oy), hi = Math.max(ey, oy);
-    // the landing must suit some body height between the two feet
-    if (pathClear(a, b, lyaw) && BODY_MIXES.some(k => footOk(b, lx, lz, lyaw, lo + (hi - lo) * k))) { gait.swing[s] = { t: 0, a: [...a], b }; return true; }
+    const b = [ex, ey, ez];
+    if (!pathClear(a, b, lyaw)) continue;
+    // the legs do not second-guess a step; only a forced one (its ground went)
+    // must land where the leg reaches, at some body height between the feet
+    if (!mayStepOff && ![0, 0.5, 1].some(k => legFits(b, lx, lz, lyaw, gait.gy + (ey - gait.gy) * k))) continue;
+    gait.swing[s] = { t: 0, a: [...a], b }; gait.last = s; return true;
   }
   // a drop deeper than MAX_RISE: the foot steps out level over it, and the mech falls
   if (mayStepOff) {
     const g = groundUnder(tx, tz, lyaw, a[1], false);
     if (g === null || g < a[1] - G.MAX_RISE) {
       const b = [tx, a[1], tz];
-      if (pathClear(a, b, lyaw) && footOk(b, lx, lz, lyaw, gait.gy)) { gait.swing[s] = { t: 0, a: [...a], b }; return true; }
+      if (pathClear(a, b, lyaw)) { gait.swing[s] = { t: 0, a: [...a], b }; gait.last = s; return true; }
     }
   }
   return false;
 }
-/** Whether the body may stand at (x, gy, z) facing yaw: no planted leg that
- * suits the body now would stop suiting it there. */
+/** The body's leash: whether it may stand at (x, gy, z) facing yaw, that is no
+ * planted leg that reaches its foot now would stop reaching it there.
+ * Otherwise the body does not wait on the legs. */
 function legsAllow(x, z, yaw, gy) {
-  return ["l", "r"].every(s => gait.swing[s] || footOk(gait.feet[s], x, z, yaw, gy) || !footOk(gait.feet[s], body.x, body.z, body.yaw, gait.gy));
+  return ["l", "r"].every(s => gait.swing[s] || legFits(gait.feet[s], x, z, yaw, gy) || !legFits(gait.feet[s], body.x, body.z, body.yaw, gait.gy));
+}
+/** Whether a leg can reach `foot` from a body at (x, gy, z) facing yaw at all:
+ * within max_reach of its length and its hip and knee ranges. */
+function legFits(foot, x, z, yaw, gy) {
+  const f = fwdOf(yaw), mz = (foot[0] - x) * f[0] + (foot[2] - z) * f[1];
+  const dy = ANKLE[1] + foot[1] - gy + G.CROUCH - HIP[1], dz = mz - HIP[2];
+  if (Math.hypot(dy, dz) > G.MAX_REACH * (L1 + L2)) return false;
+  const [hip, knee] = legIK(dy, dz);
+  return [["hip_l", hip], ["knee_l", knee]].every(([j, v]) => v >= spec.joints[j].range[0] && v <= spec.joints[j].range[1]);
 }
 /** Whether foot s still has its ground (not gone, lower, or grown into it). */
 function supported(s) {
@@ -503,14 +522,15 @@ function gaitTick(dt) {
   // steps
   const lead = gait.speed * G.SWING * G.LEAD;
   const moving = Math.abs(gait.speed) > 0.01 || Math.abs(gait.turn) > 0.5;
-  for (const s of ["l", "r"]) {
-    const o = s === "l" ? "r" : "l";
-    if (gait.swing[s] || gait.swing[o]) continue;
-    const off = Math.hypot(...footHome(s, lead).map((v, i) => v - gait.feet[s][i * 2]));
-    const other = Math.hypot(...footHome(o, lead).map((v, i) => v - gait.feet[o][i * 2]));
-    if (off > (moving ? G.STEP : G.SETTLE) && off >= other)
-      planStep(s, lead, body.x + f[0] * gait.speed * G.SWING, body.z + f[1] * gait.speed * G.SWING, body.yaw + rad(gait.turn) * G.SWING);
-  }
+  // the feet take turns: the one that did not step last goes when far enough
+  // from its home spot; the one that just stepped waits (unless badly placed)
+  const limit = moving ? G.STEP : G.SETTLE;
+  if (!gait.swing.l && !gait.swing.r)
+    for (const s of gait.last === "l" ? ["r", "l"] : ["l", "r"]) {
+      const off = Math.hypot(...footHome(s, lead).map((v, i) => v - gait.feet[s][i * 2]));
+      if (off > limit && (s !== gait.last || off > 2.5 * limit) &&
+          planStep(s, lead, body.x + f[0] * gait.speed * G.SWING, body.z + f[1] * gait.speed * G.SWING, body.yaw + rad(gait.turn) * G.SWING)) break;
+    }
   // swings
   const lift = { l: 0, r: 0 }, arcs = { l: 0, r: 0 };
   let rise = 0;
@@ -736,11 +756,22 @@ function frame(fixedDt) {
   // parked: blend into (or out of) the kneel over kneel_time
   kneelK = approach(kneelK, document.getElementById("kneel").checked ? 1 : 0, dt / g_.kneel_time);
   if (kneelK > 0) {
+    // each ankle arcs from where it stands to where the kneel has it, the leg
+    // following by IK (blending the joint angles drives the feet into the ground)
     const e = kneelK * kneelK * (3 - 2 * kneelK), KP = spec.kneel_pose;
-    for (const j in KP) pose[j] = pose[j] * (1 - e) + KP[j] * e;
     const ground = walk.checked ? gait.gy : 0;
-    if (walk.checked) body.y = body.y * (1 - e) + (ground - g_.kneel_drop) * e;
-    else { bob = bob * (1 - e) - g_.kneel_drop * e; }
+    const bodyS = walk.checked ? body.y - ground : bob, bodyK = bodyS * (1 - e) - g_.kneel_drop * e;
+    for (const t of ["l", "r"]) {
+      if (e >= 0.999) { for (const j of ["hip_", "knee_", "ankle_"]) pose[j + t] = KP[j + t]; continue; }
+      const h0 = pose["hip_" + t], k0 = pose["knee_" + t], pitch0 = h0 + k0 + pose["ankle_" + t];
+      const sa = legFK(h0, k0), ka = legFK(KP["hip_" + t], KP["knee_" + t]);
+      const sy = HIP[1] + bodyS + sa[0], ky = HIP[1] - g_.kneel_drop + ka[0];
+      const ay = sy + (ky - sy) * e + g_["kneel_lift_" + t] * Math.sin(Math.PI * e), az = sa[1] + (ka[1] - sa[1]) * e;
+      const [hip, knee] = legIK(ay - (HIP[1] + bodyK), az);
+      const kp = KP["hip_" + t] + KP["knee_" + t] + KP["ankle_" + t];
+      pose["hip_" + t] = hip; pose["knee_" + t] = knee; pose["ankle_" + t] = pitch0 + (kp - pitch0) * e - hip - knee;
+    }
+    if (walk.checked) body.y = ground + bodyK; else bob = bodyK;
     for (const j in KP) sliders[j].value = pose[j];
   }
   // the camera follows the mech

@@ -42,6 +42,17 @@ The cabin is sized in real meters for the pilot: 1.38 m of headroom and
 1.86 m wide. The chair is a racing seat that leans back 30°. The hatch is on
 the roof behind the chair, and the roof gun is in front of it.
 
+## Legs that roll
+
+The sprinter's legs have two more joints than the walker's (`JOINTS` in
+`mech_sprinter.py`). The hip rolls the whole leg out (up to 28°) or in (up
+to 12°) about the front-to-back axis, on a yoke (`hip_yoke`) that turns on
+two roll bearings under the hip mount. The ankle rolls the foot back level.
+The gait solves each leg in its tilted plane: a foot off to the side swings
+the leg out to it. So the feet step sideways when it strafes, and they reach
+where the steps put them when it turns or runs. The right leg's roll joints
+are mirrored (`hip_roll_r` runs -28..12).
+
 ## Walk and kneel
 
 The walk is the walker's algorithm with the sprinter's numbers (`GAIT` in
@@ -52,7 +63,9 @@ find its own ground. `python3 tools/gait_check.py sprinter` passes every check.
 
 The parked kneel (`KNEEL_POSE`) was solved from the part geometry: the right
 foot flat on the ground ahead, the left knee guard 3 cm off the ground, and
-the left foot behind on its toes. The body sinks 2.6 m.
+the left foot behind on its toes. The body sinks 2.6 m. Going down and coming
+up, the ankles arc 1.1 m (left) and 0.4 m (right) clear of the ground, so no
+part goes through it on the way.
 
 ## Piloting
 
@@ -61,8 +74,10 @@ The sprinter is an agile type (`agile` in its gait):
 - The body turns toward where the pilot looks. W/S run, and A/D strafe at up
   to 55% of top speed.
 - The turret faces ahead with the body. The guns still turn on their own
-  mounts toward the aim. Only while it kneels does the turret turn by itself.
-- Shift kneels or stands up.
+  mounts toward the aim. While it kneels, the turret turns freely toward
+  where the pilot looks. It only swings back to face ahead for getting out.
+- Shift kneels or stands up. It does nothing while the mech is still going
+  down or getting up, and a held Shift counts as one press.
 - Space jumps at 11.5 m/s up (4.4 m), carrying the mech's speed plus a
   little more forward. Then it pressurizes again for 3 s (`jump_cooldown`),
   counted in the air too, with a hiss when it is ready. Space while it

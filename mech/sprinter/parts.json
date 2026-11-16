@@ -50,6 +50,8 @@
   "fall_drift": 4.5,
   "kneel_drop": 2.595,
   "kneel_time": 1.1,
+  "kneel_lift_l": 1.125,
+  "kneel_lift_r": 0.375,
   "agile": 1.0,
   "strafe": 0.55,
   "jump_speed": 11.5,
@@ -8411,11 +8413,15 @@
  ],
  "segments": [
   "pelvis",
+  "hipr_l",
   "thigh_l",
   "shin_l",
+  "talus_l",
   "foot_l",
+  "hipr_r",
   "thigh_r",
   "shin_r",
+  "talus_r",
   "foot_r",
   "torso",
   "hyaw_l",
@@ -8426,6 +8432,21 @@
   "lgun_c"
  ],
  "joints": {
+  "hip_roll_l": {
+   "pivot": [
+    1.575,
+    4.95,
+    0.0
+   ],
+   "axis": "z",
+   "parent": "pelvis",
+   "child": "hipr_l",
+   "range": [
+    -12,
+    28
+   ],
+   "label": "Hip roll L"
+  },
   "hip_l": {
    "pivot": [
     1.575,
@@ -8433,7 +8454,7 @@
     0.0
    ],
    "axis": "x",
-   "parent": "pelvis",
+   "parent": "hipr_l",
    "child": "thigh_l",
    "range": [
     -110,
@@ -8464,12 +8485,42 @@
    ],
    "axis": "x",
    "parent": "shin_l",
-   "child": "foot_l",
+   "child": "talus_l",
    "range": [
     -44,
     52
    ],
    "label": "Ankle L"
+  },
+  "ankle_roll_l": {
+   "pivot": [
+    1.575,
+    0.87,
+    -0.63
+   ],
+   "axis": "z",
+   "parent": "talus_l",
+   "child": "foot_l",
+   "range": [
+    -28,
+    12
+   ],
+   "label": "Ankle roll L"
+  },
+  "hip_roll_r": {
+   "pivot": [
+    -1.575,
+    4.95,
+    0.0
+   ],
+   "axis": "z",
+   "parent": "pelvis",
+   "child": "hipr_r",
+   "range": [
+    -28,
+    12
+   ],
+   "label": "Hip roll R"
   },
   "hip_r": {
    "pivot": [
@@ -8478,7 +8529,7 @@
     0.0
    ],
    "axis": "x",
-   "parent": "pelvis",
+   "parent": "hipr_r",
    "child": "thigh_r",
    "range": [
     -110,
@@ -8509,12 +8560,27 @@
    ],
    "axis": "x",
    "parent": "shin_r",
-   "child": "foot_r",
+   "child": "talus_r",
    "range": [
     -44,
     52
    ],
    "label": "Ankle R"
+  },
+  "ankle_roll_r": {
+   "pivot": [
+    -1.575,
+    0.87,
+    -0.63
+   ],
+   "axis": "z",
+   "parent": "talus_r",
+   "child": "foot_r",
+   "range": [
+    -12,
+    28
+   ],
+   "label": "Ankle roll R"
   },
   "waist": {
    "pivot": [
@@ -8637,7 +8703,7 @@
   "#c8232c"
  ],
  "damage_state": "custom_model_data string 0 = \"damaged\" swaps to the _damaged model",
- "total_mass": 2885.7,
+ "total_mass": 2975.7,
  "parts": [
   {
    "id": "pelvis",
@@ -8883,7 +8949,7 @@
   },
   {
    "id": "hip_mount_l",
-   "label": "Hip mount (flange, yoke, piston anchor) (left)",
+   "label": "Hip mount (flange, roll bearings and motor) (left)",
    "group": "structure",
    "parent": "pelvis",
    "segment": "pelvis",
@@ -8907,25 +8973,64 @@
    "damaged_model": false,
    "hitbox": [
     [
-     -0.45,
-     -0.27,
-     -1.04
+     -0.39,
+     -0.208,
+     -0.6
     ],
     [
      0.39,
-     0.824,
-     0.39
+     0.795,
+     0.75
     ]
    ],
    "links": {},
-   "elements": 45
+   "elements": 39
+  },
+  {
+   "id": "hip_yoke_l",
+   "label": "Hip yoke (rolls the leg out and in; hip piston anchor) (left)",
+   "group": "structure",
+   "parent": "hip_mount_l",
+   "segment": "hipr_l",
+   "item_model": "mech:sprinter/leg/hip_yoke_l",
+   "pivot": [
+    1.575,
+    4.95,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 45.0,
+   "hp": 225,
+   "on_break": "fail",
+   "effect": "Cracks: the leg loses its roll and the hip motor its torque",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.45,
+     -0.27,
+     -1.07
+    ],
+    [
+     0.33,
+     0.834,
+     0.339
+    ]
+   ],
+   "links": {},
+   "elements": 41
   },
   {
    "id": "hip_motor_l",
    "label": "Hip motor (servo) (left)",
    "group": "actuator",
-   "parent": "hip_mount_l",
-   "segment": "pelvis",
+   "parent": "hip_yoke_l",
+   "segment": "hipr_l",
    "item_model": "mech:sprinter/leg/hip_motor_l",
    "pivot": [
     1.575,
@@ -9045,7 +9150,7 @@
    "id": "thigh_l",
    "label": "Thigh frame (left)",
    "group": "structure",
-   "parent": "hip_mount_l",
+   "parent": "hip_yoke_l",
    "segment": "thigh_l",
    "item_model": "mech:sprinter/leg/thigh_l",
    "pivot": [
@@ -9404,7 +9509,7 @@
    "label": "Hip piston cylinder (pelvis to thigh) (left)",
    "group": "actuator",
    "parent": "hip_mount_l",
-   "segment": "pelvis",
+   "segment": "hipr_l",
    "item_model": "mech:sprinter/leg/hip_piston_cyl_l",
    "pivot": [
     1.575,
@@ -9488,7 +9593,7 @@
      5.64,
      -0.93
     ],
-    "to_segment": "pelvis",
+    "to_segment": "hipr_l",
     "rest_length": 1.8162
    },
    "elements": 13
@@ -9683,7 +9788,7 @@
   },
   {
    "id": "hip_mount_r",
-   "label": "Hip mount (flange, yoke, piston anchor) (right)",
+   "label": "Hip mount (flange, roll bearings and motor) (right)",
    "group": "structure",
    "parent": "pelvis",
    "segment": "pelvis",
@@ -9708,24 +9813,63 @@
    "hitbox": [
     [
      -0.39,
-     -0.27,
-     -1.04
+     -0.208,
+     -0.6
     ],
     [
-     0.45,
-     0.824,
-     0.39
+     0.39,
+     0.795,
+     0.75
     ]
    ],
    "links": {},
-   "elements": 45
+   "elements": 39
+  },
+  {
+   "id": "hip_yoke_r",
+   "label": "Hip yoke (rolls the leg out and in; hip piston anchor) (right)",
+   "group": "structure",
+   "parent": "hip_mount_r",
+   "segment": "hipr_r",
+   "item_model": "mech:sprinter/leg/hip_yoke_r",
+   "pivot": [
+    -1.575,
+    4.95,
+    0.0
+   ],
+   "rest": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "anim": "fixed",
+   "mass": 45.0,
+   "hp": 225,
+   "on_break": "fail",
+   "effect": "Cracks: the leg loses its roll and the hip motor its torque",
+   "shield": [],
+   "damaged_model": false,
+   "hitbox": [
+    [
+     -0.33,
+     -0.27,
+     -1.07
+    ],
+    [
+     0.45,
+     0.834,
+     0.339
+    ]
+   ],
+   "links": {},
+   "elements": 41
   },
   {
    "id": "hip_motor_r",
    "label": "Hip motor (servo) (right)",
    "group": "actuator",
-   "parent": "hip_mount_r",
-   "segment": "pelvis",
+   "parent": "hip_yoke_r",
+   "segment": "hipr_r",
    "item_model": "mech:sprinter/leg/hip_motor_r",
    "pivot": [
     -1.575,
@@ -9845,7 +9989,7 @@
    "id": "thigh_r",
    "label": "Thigh frame (right)",
    "group": "structure",
-   "parent": "hip_mount_r",
+   "parent": "hip_yoke_r",
    "segment": "thigh_r",
    "item_model": "mech:sprinter/leg/thigh_r",
    "pivot": [
@@ -10204,7 +10348,7 @@
    "label": "Hip piston cylinder (pelvis to thigh) (right)",
    "group": "actuator",
    "parent": "hip_mount_r",
-   "segment": "pelvis",
+   "segment": "hipr_r",
    "item_model": "mech:sprinter/leg/hip_piston_cyl_r",
    "pivot": [
     -1.575,
@@ -10288,7 +10432,7 @@
      5.64,
      -0.93
     ],
-    "to_segment": "pelvis",
+    "to_segment": "hipr_r",
     "rest_length": 1.8162
    },
    "elements": 13

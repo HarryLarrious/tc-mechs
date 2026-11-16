@@ -499,31 +499,45 @@ def rot_x_about(p, c, deg):
     return (p[0], c[1] + y * math.cos(a) - z * math.sin(a), c[2] + y * math.sin(a) + z * math.cos(a))
 
 
+def rot_z_about(p, c, deg):
+    a = math.radians(deg)
+    x, y = p[0] - c[0], p[1] - c[1]
+    return (c[0] + x * math.cos(a) - y * math.sin(a), c[1] + x * math.sin(a) + y * math.cos(a), p[2])
+
+
 def posed(p, seg, pose, joints=None, segments=SEGMENTS):
-    """Leg-frame point p on segment `seg`, moved to pose {joint: degrees}."""
+    """Leg-frame point p on segment `seg`, moved to pose {joint: degrees}.
+    A joint is (pivot, parent, child) turning about X, or (pivot, parent,
+    child, "z") turning about Z; segments are in order from the pelvis."""
     joints = joints or JOINTS
     order = segments.index(seg)
-    for j, (piv, _, child) in reversed(list(joints.items())):
+    for j, v in reversed(list(joints.items())):
+        piv, child = v[0], v[2]
         if order >= segments.index(child):
-            p = rot_x_about(p, piv, pose.get(j, 0.0))
+            rot = rot_z_about if len(v) > 3 and v[3] == "z" else rot_x_about
+            p = rot(p, piv, pose.get(j, 0.0))
     return p
 
 
-def piston_ok(name, pose, pistons=None, joints=None):
+def piston_ok(name, pose, pistons=None, joints=None, segments=SEGMENTS):
     (A, sa), (B, sb) = (pistons or PISTONS)[name]
     L = math.dist(A, B)
-    Lp = math.dist(posed(A, sa, pose, joints), posed(B, sb, pose, joints))
+    Lp = math.dist(posed(A, sa, pose, joints, segments), posed(B, sb, pose, joints, segments))
     # rod tip must stay between the bottom of the bore and the gland
     return BARREL * L + 0.10 >= Lp - ROD * L >= EYE
 
 
-def joint_ranges(pistons=None, joints=None, caps=None):
-    """Each leg joint's range (degrees): as far as its pistons allow, within its cap."""
+def joint_ranges(pistons=None, joints=None, caps=None, segments=SEGMENTS, piston_joint=None):
+    """Each leg joint's range (degrees): as far as its pistons allow, within its
+    cap. A piston works the joint between its two segments, or the one
+    `piston_joint` names for it."""
     pistons, joints, caps = pistons or PISTONS, joints or JOINTS, caps or JOINT_CAP
     out = {}
-    for j, (_, pa, ch) in joints.items():
-        names = [n for n, ((_, sa), (_, sb)) in pistons.items() if {sa, sb} == {pa, ch}]
-        ok = lambda a: all(piston_ok(n, {j: a}, pistons, joints) for n in names)
+    for j, v in joints.items():
+        pa, ch = v[1], v[2]
+        names = [n for n, ((_, sa), (_, sb)) in pistons.items()
+                 if (piston_joint or {}).get(n, None) == j or (not piston_joint and {sa, sb} == {pa, ch})]
+        ok = lambda a: all(piston_ok(n, {j: a}, pistons, joints, segments) for n in names)
         lo = hi = 0
         while lo > -caps[j] and ok(lo - 1):
             lo -= 1
@@ -568,18 +582,24 @@ def place_leg(tag: str, parts: list[Part] | None = None, hip_x: float = HIP_X) -
     return out
 
 
-def leg_joints(ranges: dict, hip_x: float, joints: dict | None = None) -> tuple[list, dict]:
-    """The pelvis and both legs' segments, and their joints (mech frame)."""
+def leg_joints(ranges: dict, hip_x: float, joints: dict | None = None, seg_names=SEGMENTS) -> tuple[list, dict]:
+    """The pelvis and both legs' segments, and their joints (mech frame). A
+    joint about Z is mirrored on the right leg, so its range flips there (the
+    same angle swings both legs outward)."""
     joints = joints or JOINTS
     segments = ["pelvis"]
     out = {}
     for tag, (s, _) in SIDES.items():
-        segments += [f"{g}_{tag}" for g in SEGMENTS[1:]]
-        for j, (piv, pa, ch) in joints.items():
+        segments += [f"{g}_{tag}" for g in seg_names[1:]]
+        for j, v in joints.items():
+            piv, pa, ch = v[:3]
+            axis = v[3] if len(v) > 3 else "x"
+            lo, hi = ranges[j]
             out[f"{j}_{tag}"] = {
-                "pivot": [round(s * (piv[0] + hip_x), 4), piv[1], piv[2]], "axis": "x",
-                "parent": pa if pa == "pelvis" else f"{pa}_{tag}", "child": f"{ch}_{tag}", "range": ranges[j],
-                "label": f"{j.capitalize()} {tag.upper()}"}
+                "pivot": [round(s * (piv[0] + hip_x), 4), piv[1], piv[2]], "axis": axis,
+                "parent": pa if pa == "pelvis" else f"{pa}_{tag}", "child": f"{ch}_{tag}",
+                "range": [lo, hi] if axis == "x" or s > 0 else [-hi, -lo],
+                "label": f"{j.replace('_', ' ').capitalize()} {tag.upper()}"}
     return segments, out
 
 

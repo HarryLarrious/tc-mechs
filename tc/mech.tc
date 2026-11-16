@@ -134,6 +134,10 @@ function saveType(): dict {
     line d["tFootSamples"] = global tFootSamples;
     line d["gSegs"] = global gSegs;
     line d["gKneelJ"] = global gKneelJ;
+    line d["gRoll"] = global gRoll;
+    line d["gKneelAnk"] = global gKneelAnk;
+    line d["gKneelPitch"] = global gKneelPitch;
+    line d["gKneelLift"] = global gKneelLift;
     line d["gHip"] = global gHip;
     line d["gAnkle"] = global gAnkle;
     line n = [global gL1, global gL2, global gT0a, global gPhi0, global gBend, global gCrouch, global gSwing, global gLift, global gBob, global gStep,
@@ -159,6 +163,10 @@ function restoreType(d: dict) {
     global tFootSamples = d["tFootSamples"] as list[vec];
     global gSegs = d["gSegs"] as list[num];
     global gKneelJ = d["gKneelJ"] as list[num];
+    global gRoll = d["gRoll"] as list[num];
+    global gKneelAnk = d["gKneelAnk"] as list[vec];
+    global gKneelPitch = d["gKneelPitch"] as list[num];
+    global gKneelLift = d["gKneelLift"] as list[num];
     global gHip = d["gHip"] as vec;
     global gAnkle = d["gAnkle"] as vec;
     line n = d["n"] as list[num];
@@ -297,7 +305,7 @@ function mechSegments(m: num): list {
         line a: num = line joints[line out.len() + 1] as num;
         line c = num.cos(line a);
         line sn = num.sin(line a);
-        // the joint's own rotation: about X or about Y
+        // the joint's own rotation: about X, Y or Z
         line rx = vec(1, 0, 0);
         line ry = vec(0, line c, line sn);
         line rz = vec(0, 0 - line sn, line c);
@@ -305,6 +313,10 @@ function mechSegments(m: num): list {
             line rx = vec(line c, 0, 0 - line sn);
             line ry = vec(0, 1, 0);
             line rz = vec(line sn, 0, line c);
+        } else if (line seg[4] as str == "z") {
+            line rx = vec(line c, line sn, 0);
+            line ry = vec(0 - line sn, line c, 0);
+            line rz = vec(0, 0, 1);
         }
         line piv = line seg[5] as vec;
         line turned = line rx * line piv.x + line ry * line piv.y + line rz * line piv.z;

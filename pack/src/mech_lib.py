@@ -70,6 +70,8 @@ GAIT = {
     # the left foot behind resting on its toes)
     "kneel_drop": 1.571, # how far the body sinks below the standing rest pose (3.3 m real)
     "kneel_time": 1.5,   # seconds to kneel or stand up
+    "kneel_lift_l": 0.5, # going down or up, each ankle moves on an arc this high (left, right),
+    "kneel_lift_r": 0.15,  # so no part goes through the ground (checked offline)
     # piloting: an agile mech (1) steers where its pilot looks, strafes on A/D,
     # kneels on Shift (its turret only turns on its own while kneeling) and
     # jumps on Space, then pressurizes again; the walker turns on A/D
@@ -81,7 +83,7 @@ GAIT = {
 KNEEL_POSE = {"hip_l": 41.0, "knee_l": 47.0, "ankle_l": -1.0, "hip_r": -102.0, "knee_r": 64.0, "ankle_r": 38.0}
 GAIT_LENGTHS = ("crouch", "lift", "bob", "step", "settle", "max_speed", "accel", "max_rise", "probe_up",
                 "probe_down", "climb_rate", "foot_heel", "foot_mid", "foot_toe", "foot_side", "land_dip",
-                "dip_rate", "fall_drift", "kneel_drop")
+                "dip_rate", "fall_drift", "kneel_drop", "kneel_lift_l", "kneel_lift_r")
 
 # Collision probes (design size, mech frame): points that must stay out of
 # solid blocks. "body" ones turn with the body's heading, "torso" ones with

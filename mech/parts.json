@@ -50,6 +50,8 @@
   "fall_drift": 4.2,
   "kneel_drop": 3.2991,
   "kneel_time": 1.5,
+  "kneel_lift_l": 1.05,
+  "kneel_lift_r": 0.315,
   "agile": 0.0,
   "strafe": 0.0,
   "jump_speed": 0.0,
