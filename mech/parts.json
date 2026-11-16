@@ -1,4 +1,7 @@
 {
+ "type": "walker",
+ "label": "Walker",
+ "about": "The walker: a heavy turret on two digitigrade legs, two rotary cannons and two roof machine guns.",
  "frame": "+X left, +Y up, +Z forward; meters (scaled); origin on the ground midway between the hips",
  "model_scale": 0.2,
  "placement": "item display at the mech origin; matrix = mech * segment(pose) * translate(pivot) * rotate_xyz(rest). aim parts instead sit at their posed pivot with local +Y turned toward their posed links.to point. The pack scales the half-size models back to 1:1.",
@@ -46,7 +49,12 @@
   "dip_rate": 1.05,
   "fall_drift": 4.2,
   "kneel_drop": 3.2991,
-  "kneel_time": 1.5
+  "kneel_time": 1.5,
+  "agile": 0.0,
+  "strafe": 0.0,
+  "jump_min": 0.0,
+  "jump_max": 0.0,
+  "charge_time": 1.0
  },
  "kneel_pose": {
   "hip_l": 41.0,
@@ -9984,6 +9992,62 @@
    5.25
   ]
  ],
+ "hatch_center": [
+  0,
+  10.248,
+  -1.428
+ ],
+ "camera_eye": [
+  0.0,
+  10.353,
+  1.302
+ ],
+ "guns": [
+  {
+   "kind": "heavy",
+   "elevation": "elev_hl",
+   "traverse": "trav_hl",
+   "side": "l",
+   "muzzle": [
+    2.73,
+    9.24,
+    5.355
+   ]
+  },
+  {
+   "kind": "light",
+   "elevation": "elev_ll",
+   "traverse": "trav_ll",
+   "side": "l",
+   "muzzle": [
+    0.945,
+    10.668,
+    2.268
+   ]
+  },
+  {
+   "kind": "heavy",
+   "elevation": "elev_hr",
+   "traverse": "trav_hr",
+   "side": "r",
+   "muzzle": [
+    -2.73,
+    9.24,
+    5.355
+   ]
+  },
+  {
+   "kind": "light",
+   "elevation": "elev_lr",
+   "traverse": "trav_lr",
+   "side": "r",
+   "muzzle": [
+    -0.945,
+    10.668,
+    2.268
+   ]
+  }
+ ],
  "segments": [
   "pelvis",
   "thigh_l",
@@ -11024,7 +11088,7 @@
     0.0
    ],
    "anim": "aim",
-   "mass": 22,
+   "mass": 22.0,
    "hp": 90,
    "on_break": "detach",
    "effect": "Leaks: the joint loses its air assist and moves on its motor alone; broken off with its rod",
@@ -11118,7 +11182,7 @@
     0.0
    ],
    "anim": "aim",
-   "mass": 18,
+   "mass": 18.0,
    "hp": 80,
    "on_break": "detach",
    "effect": "Leaks: the joint loses its air assist and moves on its motor alone; broken off with its rod",
@@ -11212,7 +11276,7 @@
     0.0
    ],
    "anim": "aim",
-   "mass": 14,
+   "mass": 14.0,
    "hp": 70,
    "on_break": "detach",
    "effect": "Leaks: the joint loses its air assist and moves on its motor alone; broken off with its rod",
@@ -11824,7 +11888,7 @@
     0.0
    ],
    "anim": "aim",
-   "mass": 22,
+   "mass": 22.0,
    "hp": 90,
    "on_break": "detach",
    "effect": "Leaks: the joint loses its air assist and moves on its motor alone; broken off with its rod",
@@ -11918,7 +11982,7 @@
     0.0
    ],
    "anim": "aim",
-   "mass": 18,
+   "mass": 18.0,
    "hp": 80,
    "on_break": "detach",
    "effect": "Leaks: the joint loses its air assist and moves on its motor alone; broken off with its rod",
@@ -12012,7 +12076,7 @@
     0.0
    ],
    "anim": "aim",
-   "mass": 14,
+   "mass": 14.0,
    "hp": 70,
    "on_break": "detach",
    "effect": "Leaks: the joint loses its air assist and moves on its motor alone; broken off with its rod",

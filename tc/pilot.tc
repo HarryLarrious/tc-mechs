@@ -86,7 +86,7 @@ function parsePath(rows: list): list {
     return line out;
 }
 
-/** Parses the timelines (loadMechData). */
+/** Parses the current type's timelines (loadMechData). */
 function loadPilotPath {
     loadPilotPose();
     global pPath = parsePath(pilotBoardPath());
@@ -115,7 +115,6 @@ function boardNearest {
         default.sendMessage(s"<gray>You are already in a mech. <yellow>F</yellow> gets out.");
         return;
     }
-    loadGait();
     line me = default.location;
     line best = 0;
     line bestD = 30;
@@ -134,6 +133,7 @@ function boardNearest {
         return;
     }
     line m = line best;
+    useMech(line m);
     global mPilot[line m] = default.uuid;
     global gFollow[line m] = "";
     global gWantSpeed[line m] = 0;
@@ -196,6 +196,9 @@ function pilotRelease(m: num) {
     global mTrigL[m] = 0;
     global gWantSpeed[m] = 0;
     global gWantTurn[m] = 0;
+    global gWantSide[m] = 0;
+    global gHold[m] = 0;
+    global gCharge[m] = 0;
     global gWalking[m] = 1;
     // (Selects nobody when the player has left.)
     select playersByName(line pilot);
@@ -346,7 +349,11 @@ function pilotBoardTick(m: num): num {
         if (global gKneel[m] == 0) {
             global mBoard[m] = 0;
             select playersByName(global mPilot[m]);
-            selected.sendMessage(s"<gray>Piloting mech %var(m). <yellow>W/S</yellow> walk, <yellow>A/D</yellow> turn, look to aim, <yellow>right click</yellow> (hold) cannons, <yellow>left click</yellow> machine guns, <yellow>Q</yellow> roof camera, <yellow>F</yellow> get out.");
+            if (global gAgile == 1) {
+                selected.sendMessage(s"<gray>Piloting mech %var(m). <yellow>W/S</yellow> run, <yellow>A/D</yellow> strafe, look to steer and aim, <yellow>Shift</yellow> kneel (the turret turns freely), <yellow>Space</yellow> charge a jump and <yellow>Space</yellow> again to jump, <yellow>right click</yellow> (hold) cannons, <yellow>left click</yellow> machine gun, <yellow>Q</yellow> roof camera, <yellow>F</yellow> get out.");
+            } else {
+                selected.sendMessage(s"<gray>Piloting mech %var(m). <yellow>W/S</yellow> walk, <yellow>A/D</yellow> turn, look to aim, <yellow>right click</yellow> (hold) cannons, <yellow>left click</yellow> machine guns, <yellow>Q</yellow> roof camera, <yellow>F</yellow> get out.");
+            }
             select reset;
         }
     } else if (line state == 5) {
@@ -609,9 +616,55 @@ function pilotFigure(m: num, H: vec, tl: vec, tu: vec, tf: vec, limbs: list, loo
 }
 
 playerevent dismount {
-    // Shift would drop the pilot out of the cockpit; getting out is F.
-    if (mechOfPilot(default.uuid) != 0) {
+    // Shift would drop the pilot out of the cockpit (getting out is F); in an
+    // agile type it kneels or stands up instead
+    line m = mechOfPilot(default.uuid);
+    if (line m != 0) {
         event.cancel();
+        if (global mBoard[line m] == 0) {
+            mechKneelKey(line m);
+        }
+    }
+}
+
+playerevent vehicleJump {
+    // Space in an agile type: starts charging a jump, and jumps
+    line m = mechOfPilot(default.uuid);
+    if (line m != 0 && global mBoard[line m] == 0) {
+        mechJumpKey(line m);
+    }
+}
+
+/** Shift in mech m (agile types): down on one knee, or back up. */
+function mechKneelKey(m: num) {
+    useMech(m);
+    if (global gAgile != 1 || global gFalling[m] == 1 || global mWreck[m] == 1) {
+        return;
+    }
+    global gHold[m] = 1 - global gHold[m];
+    global gCharge[m] = 0;
+    global gWalking[m] = 1;
+    ensureMechLoop();
+    line p = global mPos[m];
+    allPlayers.playSound(snd("Piston Retract", 1.5, 0.6), loc(p.x, p.y + 2, p.z));
+}
+
+/** Space in mech m (agile types): the first press starts charging a jump
+ * (DiamondFire tells only of the press, not the release), the next jumps
+ * with the charge so far; standing, not falling, not kneeling. */
+function mechJumpKey(m: num) {
+    useMech(m);
+    if (global gAgile != 1 || global gFalling[m] == 1 || global gKneel[m] > 0 || global gHold[m] == 1 || global mWreck[m] == 1) {
+        return;
+    }
+    if (global gCharge[m] == 0) {
+        global gCharge[m] = 1;
+        global gWalking[m] = 1;
+        ensureMechLoop();
+        line p = global mPos[m];
+        allPlayers.playSound(snd("Piston Retract", 1.5, 0.8), loc(p.x, p.y + 2, p.z));
+    } else if (global gCharge[m] > 3) {
+        mechLeap(m);
     }
 }
 
@@ -623,6 +676,7 @@ playerevent dropItem {
         if (global mBoard[line m] != 0) {
             return;
         }
+        useMech(line m);
         if (partBroken(line m, "sensors") == 1) {
             default.sendActionBar(s"<red><b>CAMERA OFFLINE</b></red> <gray>(sensors destroyed)");
             default.playSound(snd("Dispenser Fail", 0.8, 1.2));
@@ -662,14 +716,21 @@ function pilotInput(m: num): list {
     line look = selected.location;
     select reset;
     // W/S: forward at full speed, back at half; A/D: + sideways is A, a turn
-    // to the left, which lowers the yaw
+    // to the left, which lowers the yaw. An agile type strafes on A/D (+ is
+    // to the left) and turns toward where the pilot looks.
     if (line fwd > 0) {
         global gWantSpeed[m] = global gMaxSpeed * line fwd;
     } else {
         global gWantSpeed[m] = global gMaxSpeed * 0.5 * line fwd;
     }
-    global gWantTurn[m] = 0 - global gMaxTurn * line side;
-    return [line look.getCoordinate(coord="Yaw"), line look.getCoordinate(coord="Pitch")];
+    line lookYaw = line look.getCoordinate(coord="Yaw");
+    if (global gAgile == 1) {
+        global gWantSide[m] = global gMaxSpeed * global gStrafe * line side;
+        global gWantTurn[m] = num.clamp(wrapDeg(line lookYaw - global mYaw[m]) * 4, 0 - global gMaxTurn, global gMaxTurn);
+    } else {
+        global gWantTurn[m] = 0 - global gMaxTurn * line side;
+    }
+    return [line lookYaw, line look.getCoordinate(coord="Pitch")];
 }
 
 /** The pilot's action bar: speed, heading, how far the turret lags the aim,
@@ -704,6 +765,16 @@ function pilotHud(m: num, aimAt: num) {
     line state = "";
     if (global gFalling[m] == 1) {
         line state = "   <red><b>FALLING</b></red>";
+        if (global gJumpV[m].len() > 0 || global gVy[m] > 0) {
+            line state = "   <aqua><b>AIRBORNE</b></aqua>";
+        }
+    }
+    if (global gHold[m] == 1) {
+        line state = line state + "   <aqua><b>KNEELING</b></aqua> <gray>turret free</gray>";
+    }
+    if (global gCharge[m] > 0) {
+        line pct = num.round(jumpCharge(m) * 100);
+        line state = line state + "   <yellow><b>JUMP %var(pct)%</b></yellow>";
     }
     select playersByName(global mPilot[m]);
     if (stat(m, "blind") == 1) {

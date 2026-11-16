@@ -1,4 +1,6 @@
-# Mech design
+# Mech design: the walker
+
+For the second type, see [the sprinter](sprinter/README.md).
 
 A two-legged mech: an armored turret torso that turns on a pelvis, carried by
 two digitigrade (reverse-knee) legs. It has no head and no arms. Its weapons
@@ -565,6 +567,17 @@ geometry when baked.
   parts around the impact.
 
 ## Plot code
+
+Every mech has a type (1 the walker, 2 the sprinter: `mechTypeNames()`).
+`tc/mech_data.tc` and `tc/pilot_data.tc` hold each type's data under its own
+name (`walkerSegData`, `sprinterSegData`, ...). The `mech*` and `pilot*`
+functions return the current type's data (`global curType`). The parsed data
+(segments, parts, draw groups, damage data, guns, gait numbers, probes,
+timelines) is held in globals for one type at a time. `useType` and
+`useMech` in `mech.tc` make a type current. They parse its data the first
+time and keep a copy per type, which is thrown away when `mechDataStamp()`
+changes. Code that works on a mech calls `useMech(m)` first. Code that goes on
+to another mech (a round hitting another mech) puts its own type back after.
 
 `tc/mech_data.tc` is generated with the models. It holds the segments
 (`mechSegData`: parent, joint, axis, pivot, range) and the parts

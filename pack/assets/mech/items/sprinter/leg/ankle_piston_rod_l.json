@@ -1,0 +1,42 @@
+{
+ "model": {
+  "type": "minecraft:model",
+  "model": "mech:item/sprinter/leg/ankle_piston_rod_l",
+  "transformation": {
+   "translation": [
+    3.0,
+    -2.0,
+    3.0
+   ],
+   "left_rotation": [
+    0,
+    1,
+    0,
+    0
+   ],
+   "scale": [
+    5.0,
+    5.0,
+    5.0
+   ],
+   "right_rotation": [
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  "tints": [
+   {
+    "type": "minecraft:custom_model_data",
+    "index": 0,
+    "default": 14275783
+   },
+   {
+    "type": "minecraft:custom_model_data",
+    "index": 1,
+    "default": 13116204
+   }
+  ]
+ }
+}

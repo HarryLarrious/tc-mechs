@@ -5,24 +5,32 @@ Walking mechs for DiamondFire, written in
 style as the cars in tc-rally_game: every part is its own resource-pack model
 on its own item display, so any part can move, take damage or break off.
 
-The first mech walks on two legs and carries a turret torso with two heavy side guns and two light roof guns.
+There are two mech types:
+
+- **Walker**: a heavy turret on two legs, with two heavy side guns and two light roof guns
+  ([design](mech/README.md)).
+- **Sprinter**: smaller, lighter and angular, on long legs with running feet, a wide stance and a
+  long stride. It has two side cannons and one roof gun. Its pilot steers it by looking, strafes,
+  kneels and jumps ([design](mech/sprinter/README.md)).
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| [mech/](mech/) | Mech design: [README](mech/README.md), [part list](mech/PARTS.md), `parts.json` for the game code |
+| [mech/](mech/) | The walker's design: [README](mech/README.md), [part list](mech/PARTS.md), `parts.json` for the game code |
+| [mech/sprinter/](mech/sprinter/) | The sprinter's design: [README](mech/sprinter/README.md), [part list](mech/sprinter/PARTS.md), `parts.json` |
 | [pack/](pack/) | Resource pack (Minecraft 26.3, format 97.1), namespace `mech` |
-| [pack/src/mech_parts.py](pack/src/mech_parts.py) | The leg design and the build: mirrors the leg, adds the pelvis, writes models, textures and part data |
+| [pack/src/mech_parts.py](pack/src/mech_parts.py) | The walker's leg design and the build for every type: mirrors the legs, adds the pelvis, writes models, textures and part data |
+| [pack/src/mech_sprinter.py](pack/src/mech_sprinter.py) | The sprinter: its legs and running feet, angular armor, wedge turret, walk and kneel |
 | [pack/src/mech_pelvis.py](pack/src/mech_pelvis.py) | The pelvis design |
 | [pack/src/mech_torso.py](pack/src/mech_torso.py) | The turret torso and its guns |
 | [pack/src/mech_lib.py](pack/src/mech_lib.py) | Shared code: materials, textures, cuboid helpers, model and item writers |
 | [tools/viewer/](tools/viewer/) | 3D viewer: pose the joints, play a walk cycle, explode or break parts |
 | [tools/animator/](tools/animator/) | Animation editor: pose the pilot on the kneeling mech key by key, play it, save drafts |
-| [mech/animations/](mech/animations/) | The pilot's animations (getting in and getting out), baked into the game by `mech_pilot.py` |
+| [mech/animations/](mech/animations/) | The pilot's animations (getting in and getting out), baked into the game by `mech_pilot.py`; the sprinter's are in `sprinter/` |
 | [tools/build_pack.py](tools/build_pack.py) | Validates, zips and publishes the pack to the `pack-dist` branch, and points `tc/pack.tc` at it |
 | [tc/](tc/) | Terracotta code for the plot: spawning, drawing and posing mechs (`mech.tc`), the procedural walk (`gait.tc`) over blocks (`terrain.tc`), piloting (`pilot.tc`), firing (`weapons.tc`), damage (`damage.tc`), commands, the pack; `mech_data.tc` is generated |
-| [tools/gait_check.py](tools/gait_check.py) | The reference model of the procedural walk, with its checks (IK round trip, joint ranges at every speed and turn rate, test courses of steps, walls and drops) |
+| [tools/gait_check.py](tools/gait_check.py) | The reference model of the procedural walk, with its checks (IK round trip, joint ranges at every speed and turn rate, test courses of steps, walls and drops); `python3 tools/gait_check.py sprinter` checks the sprinter |
 
 ## Build the mech
 
@@ -30,7 +38,8 @@ The first mech walks on two legs and carries a turret torso with two heavy side 
 python3 pack/src/mech_parts.py
 ```
 
-Needs Pillow. Then open the viewer:
+Needs Pillow. This builds every type. Then open the viewer (pick the type at
+the top, or open `?type=sprinter`):
 
 ```bash
 python3 -m http.server 8766 --directory tools/viewer
@@ -65,12 +74,12 @@ In game (play mode). Joining sets your third-person camera 15 blocks back (the `
 
 | Command | What it does |
 | --- | --- |
-| `@mech [turn]` | Spawns a mech 20 blocks in front of you, facing you (or turned by `turn` degrees) |
+| `@mech [walker\|sprinter] [turn]` | Spawns a mech (a walker unless you name the type) 20 blocks in front of you, facing you (or turned by `turn` degrees). `@sprinter [turn]` and `@walker [turn]` do the same |
 | `@walk [m/s] [deg/s]` | The nearest mech walks forward (3 m/s by default, up to 3.8; negative walks back) and turns (+ right) |
 | `@turn [deg/s]` | The nearest mech turns on the spot (30°/s by default, up to 40; + right) |
 | `@stop` | The nearest mech stops; its feet settle under it and it kneels (parked) |
 | `@follow` | The nearest mech walks after you and aims its torso and guns at you; `@follow` again or `@stop` ends it |
-| `@board` | Boards the nearest free mech within 30 blocks: you sprint to it while it kneels and opens its hatch, leap to its knee piston, scramble up onto the roof and drop in through the hatch, then it stands up. W/S walk, A/D turn, look to aim the turret and guns, hold right click for the cannons, left click for the machine guns, Q for the roof camera, F gets out |
+| `@board` | Boards the nearest free mech within 30 blocks: you sprint to it while it kneels and opens its hatch, leap to its knee piston, scramble up onto the roof and drop in through the hatch, then it stands up. W/S walk, A/D turn, look to aim the turret and guns, hold right click for the cannons, left click for the machine guns, Q for the roof camera, F gets out. In a sprinter you climb its raised foot, catch its knee and go up over the nose instead. Its controls differ: see below |
 | `@exit` | Gets out of the mech you pilot (same as F): it kneels, and you spring out of the hatch, sprint along the roof and jump down off its knee |
 | `@pose JOINT DEGREES` | Moves a joint on the nearest mech: `hip_l`, `knee_l`, `ankle_l`, `hip_r`, `knee_r`, `ankle_r`, `waist`, `elev_hl`, `elev_hr`, `elev_ll`, `elev_lr` |
 | `@pose reset` | Puts the nearest mech back in its rest pose |
@@ -79,4 +88,15 @@ In game (play mode). Joining sets your third-person camera 15 blocks back (the `
 | `@repair` | Puts the nearest mech back together |
 | `@clearmechs` | Removes every mech |
 | `@pack` | Sends the resource pack again |
+
+### Piloting the sprinter
+
+| Key | What it does |
+| --- | --- |
+| W/S | Runs forward (up to 6.3 m/s) or back |
+| A/D | Strafes left or right |
+| Look | Steers: the body turns toward where you look, with the turret facing ahead, and the guns turn on their own mounts to aim |
+| Shift | Kneels, or stands up again. While it kneels, the turret turns freely toward where you look |
+| Space | Starts charging a jump: the mech sinks into its legs. Press Space again to jump. The longer the charge, the higher the jump (1.4 m to 4.4 m). At full charge it jumps on its own after a second. DiamondFire only reports when you press Space, not when you let go, so the jump is two presses |
+| Right click (hold), left click, Q, F | Cannons, roof machine gun, roof camera, get out (as in the walker) |
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reference model of the mech's procedural walk over blocks, and its checks.
 
-    python3 tools/gait_check.py
+    python3 tools/gait_check.py [walker|sprinter]     (default walker)
 
 The viewer (tools/viewer/index.html) and the plot code (tc/gait.tc) run the
 same algorithm; this file is the reference they were written from. All three
@@ -54,10 +54,12 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC = json.loads((ROOT / "mech/parts.json").read_text())
+TYPE = sys.argv[1] if len(sys.argv) > 1 else "walker"
+SPEC = json.loads((ROOT / ("mech/parts.json" if TYPE == "walker" else f"mech/{TYPE}/parts.json")).read_text())
 J = SPEC["joints"]
 K = SPEC["scale"]
 G = SPEC["gait"]
@@ -660,20 +662,29 @@ def main():
             for z in range(14, 40):
                 w.tops[(x, z)] = 4
 
+    # what this type should manage: steps up to max_rise, and a bar where its turret is
+    climb = int(MAX_RISE + 1e-6)
+    top = max(y for f, x, y, z in PROBES if f == "torso")
+    bar_y = (math.floor(top) - 1, math.floor(top))
+
     def bar(w):   # a beam at turret height, open underneath
         for x in range(-20, 21):
-            for y in range(9, 11):
+            for y in bar_y:
                 w.blocks.add((x, y, 16))
 
-    print()
+    print(f"\n{SPEC.get('label', TYPE)}: climbs {climb} blocks, turret up to {top:.1f} m")
     ok &= course("one-block step up and down", platform(1, 12, 30), MAX_SPEED,
                  expect=lambda m: m.pos[2] > 32)
     ok &= course("two-block step up and down", platform(2, 12, 30), 0.5 * MAX_SPEED,
                  expect=lambda m: m.pos[2] > 32)
-    ok &= course("three-block step up and down", platform(3, 12, 30), MAX_SPEED,
-                 expect=lambda m: m.pos[2] > 31)
-    ok &= course("three-block step, walking slowly", platform(3, 12, 30), 0.5 * MAX_SPEED,
-                 expect=lambda m: m.pos[2] > 31, ticks=700)
+    if climb >= 3:
+        ok &= course("three-block step up and down", platform(3, 12, 30), MAX_SPEED,
+                     expect=lambda m: m.pos[2] > 31)
+        ok &= course("three-block step, walking slowly", platform(3, 12, 30), 0.5 * MAX_SPEED,
+                     expect=lambda m: m.pos[2] > 31, ticks=700)
+    else:
+        ok &= course("three-block ledge (too high)", platform(3, 12, 30), MAX_SPEED,
+                     expect=lambda m: m.pos[2] < 13 and m.blocked > 50)
     ok &= course("four-block ledge (too high)", platform(4, 12, 30), MAX_SPEED,
                  expect=lambda m: m.pos[2] < 13 and m.blocked > 50)
     ok &= course("one-block step down", lambda w: [w.tops.__setitem__((x, z), 1 if z < 12 else 0)
@@ -687,7 +698,7 @@ def main():
                  expect=lambda m: m.pos[2] < 16 and m.blocked > 50)
     ok &= course("three-block step down", lambda w: [w.tops.__setitem__((x, z), 3 if z < 12 else 0)
                                                      for x in range(-20, 21) for z in range(-10, 60)],
-                 MAX_SPEED, expect=lambda m: m.pos[2] > 30 and m.falls == 0)
+                 MAX_SPEED, expect=lambda m: m.pos[2] > 30 and (m.falls == 0 or climb < 3), start_y=3.0)
     for top, edge in ((12, 12), (14, 14), (30, 9)):
         ok &= course(f"walking off a {top}-block cliff", lambda w, top=top, edge=edge: [
             w.tops.__setitem__((x, z), top if z < edge else 0) for x in range(-20, 21) for z in range(-12, 60)],

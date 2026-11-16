@@ -23,10 +23,10 @@ declare global mTrigH: list[num];
 declare global mTrigL: list[num];
 declare global mSpinV: list[num];
 declare global mShotT: list[num];
-/** Parsed mechMuzzles: per gun [1 heavy or 0 light, segment index, muzzle,
- * side (l or r)]. */
+/** Parsed mechMuzzles (the current type's): per gun [1 heavy or 0 light,
+ * elevation segment index, muzzle, side (l, r or c), traverse segment index,
+ * the part that turns it (its mount)]. */
 declare global wGuns: list;
-declare global wLoaded: num;
 
 /** Range (m); the heavy barrels' top spin and the spin they fire from
  * (degrees per tick), and how fast they spin up and down. */
@@ -51,27 +51,20 @@ function lightDamage(): num {
     return 2;
 }
 
-/** Parses the guns once per data version. */
+/** Parses the current type's guns (useType). */
 function loadWeapons {
-    if (global wLoaded == mechDataVersion()) {
-        return;
-    }
-    loadMechData();
     global wGuns = [];
     for (line g of mechMuzzles()) {
         line gl = line g as list;
         line heavy = 0;
+        line mount = "light_mount_";
         if (line gl[1] as str == "heavy") {
             line heavy = 1;
+            line mount = "heavy_mount_";
         }
-        line joint = line gl[2] as str;
-        line side = "r";
-        if (line joint == "elev_hl" || line joint == "elev_ll") {
-            line side = "l";
-        }
-        global wGuns.append([line heavy, mechJointSeg(line joint), line gl[3], line side]);
+        line side = line gl[5] as str;
+        global wGuns.append([line heavy, mechJointSeg(line gl[2] as str), line gl[3], line side, mechJointSeg(line gl[4] as str), line mount + line side]);
     }
-    global wLoaded = mechDataVersion();
 }
 
 /** Sets up the weapon state of a newly spawned mech. */
@@ -120,7 +113,6 @@ function weaponsTick(m: num) {
     if (!line fireH && !line fireL) {
         return;
     }
-    loadWeapons();
     line yaw = global mYaw[m];
     line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
     line U = vec(0, 1, 0);

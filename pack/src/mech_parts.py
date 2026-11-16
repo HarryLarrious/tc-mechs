@@ -46,6 +46,7 @@ does the reverse, so the rod slides in the barrel as the joint turns.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import math
 import sys
@@ -53,7 +54,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from mech_lib import (GAIT, MATERIALS, MODEL_SCALE, NS, ROOT, TINTS, Elem, Part, beam, box, hitbox,  # noqa: E402
+from mech_lib import (GAIT, GAIT_LENGTHS, MATERIALS, MODEL_SCALE, NS, ROOT, TINTS, Elem, Part, beam, box, hitbox,  # noqa: E402
                       KNEEL_POSE, MECH_SCALE, PROBES, gait_scaled, mirror_x, no_dent, plate, prism, ring_x, scale_part, to_local,
                       write_models, write_textures)
 from mech_pelvis import pelvis_parts  # noqa: E402
@@ -456,22 +457,26 @@ def aim_rest(a, b):
     return (round(math.degrees(math.atan2(d[2], d[1])), 3), 0.0, 0.0)
 
 
-def pistons():
+def pistons(table=None, add_part=None, mass_k=1.0, hp_k=1.0):
+    """The air pistons in `table` (default the walker's), each a cylinder and
+    a rod, added with `add_part` (default part())."""
+    table, add_part = table or PISTONS, add_part or part
     info = {
         "hip": ("hip_mount", "thigh", 22, 90, "Hip piston", "pelvis to thigh"),
         "knee": ("thigh", "shin", 18, 80, "Knee piston", "thigh to shin, outboard"),
         "ankle": ("shin", "foot", 14, 70, "Ankle piston", "shin to heel"),
     }
-    for name, ((A, seg_a), (B, seg_b)) in PISTONS.items():
+    for name, ((A, seg_a), (B, seg_b)) in table.items():
         holder_a, holder_b, mass, hp, label, where = info[name]
+        mass, hp = round(mass * mass_k, 1), round(hp * hp_k)
         L = math.dist(A, B)
         cyl = f"{name}_piston_cyl"
-        part(Part(cyl, f"{label} cylinder ({where})", "actuator", holder_a, seg_a, A, mass, hp, "detach",
+        add_part(Part(cyl, f"{label} cylinder ({where})", "actuator", holder_a, seg_a, A, mass, hp, "detach",
                   "Leaks: the joint loses its air assist and moves on its motor alone; broken off with its rod",
                   rest=aim_rest(A, B), anim="aim",
                   links={"to": [round(c, 4) for c in B], "to_segment": seg_b, "rest_length": round(L, 4)}),
              to_local_inv(piston_cyl(L), A))
-        part(Part(f"{name}_piston_rod", f"{label} rod", "actuator", cyl, seg_b, B, mass * 0.4, hp, "detach",
+        add_part(Part(f"{name}_piston_rod", f"{label} rod", "actuator", cyl, seg_b, B, mass * 0.4, hp, "detach",
                   "Bends: the piston binds and the joint turns slower",
                   rest=aim_rest(B, A), anim="aim", damaged=False,
                   links={"to": [round(c, 4) for c in A], "to_segment": seg_a, "rest_length": round(L, 4)}),
@@ -494,31 +499,35 @@ def rot_x_about(p, c, deg):
     return (p[0], c[1] + y * math.cos(a) - z * math.sin(a), c[2] + y * math.sin(a) + z * math.cos(a))
 
 
-def posed(p, seg, pose):
+def posed(p, seg, pose, joints=None, segments=SEGMENTS):
     """Leg-frame point p on segment `seg`, moved to pose {joint: degrees}."""
-    order = SEGMENTS.index(seg)
-    for j, (piv, _, child) in reversed(list(JOINTS.items())):
-        if order >= SEGMENTS.index(child):
+    joints = joints or JOINTS
+    order = segments.index(seg)
+    for j, (piv, _, child) in reversed(list(joints.items())):
+        if order >= segments.index(child):
             p = rot_x_about(p, piv, pose.get(j, 0.0))
     return p
 
 
-def piston_ok(name, pose):
-    (A, sa), (B, sb) = PISTONS[name]
+def piston_ok(name, pose, pistons=None, joints=None):
+    (A, sa), (B, sb) = (pistons or PISTONS)[name]
     L = math.dist(A, B)
-    Lp = math.dist(posed(A, sa, pose), posed(B, sb, pose))
+    Lp = math.dist(posed(A, sa, pose, joints), posed(B, sb, pose, joints))
     # rod tip must stay between the bottom of the bore and the gland
     return BARREL * L + 0.10 >= Lp - ROD * L >= EYE
 
 
-def joint_ranges():
+def joint_ranges(pistons=None, joints=None, caps=None):
+    """Each leg joint's range (degrees): as far as its pistons allow, within its cap."""
+    pistons, joints, caps = pistons or PISTONS, joints or JOINTS, caps or JOINT_CAP
     out = {}
-    for j, (_, _, child) in JOINTS.items():
-        names = [n for n, ((_, sa), (_, sb)) in PISTONS.items() if {sa, sb} == {JOINTS[j][1], JOINTS[j][2]}]
+    for j, (_, pa, ch) in joints.items():
+        names = [n for n, ((_, sa), (_, sb)) in pistons.items() if {sa, sb} == {pa, ch}]
+        ok = lambda a: all(piston_ok(n, {j: a}, pistons, joints) for n in names)
         lo = hi = 0
-        while lo > -JOINT_CAP[j] and all(piston_ok(n, {j: lo - 1}) for n in names):
+        while lo > -caps[j] and ok(lo - 1):
             lo -= 1
-        while hi < JOINT_CAP[j] and all(piston_ok(n, {j: hi + 1}) for n in names):
+        while hi < caps[j] and ok(hi + 1):
             hi += 1
         out[j] = [lo, hi]
     return out
@@ -536,13 +545,14 @@ def build_leg():
     pistons()
 
 
-def place_leg(tag: str) -> list[Part]:
-    """The leg-frame parts as the left or right leg in the mech frame."""
+def place_leg(tag: str, parts: list[Part] | None = None, hip_x: float = HIP_X) -> list[Part]:
+    """The leg-frame parts (default the walker's) as the left or right leg in
+    the mech frame, with the hips at x = +/-hip_x."""
     s, name = SIDES[tag]
     seg = lambda g: g if g == "pelvis" else f"{g}_{tag}"
-    mx = lambda p: (s * (p[0] + HIP_X), p[1], p[2])
+    mx = lambda p: (s * (p[0] + hip_x), p[1], p[2])
     out = []
-    for p in PARTS:
+    for p in (PARTS if parts is None else parts):
         q = copy.deepcopy(p)
         q.id = f"{p.id}_{tag}"
         q.label = f"{p.label} ({name})"
@@ -558,8 +568,23 @@ def place_leg(tag: str) -> list[Part]:
     return out
 
 
-def write_table(spec):
-    lines = ["# Mech parts", "",
+def leg_joints(ranges: dict, hip_x: float, joints: dict | None = None) -> tuple[list, dict]:
+    """The pelvis and both legs' segments, and their joints (mech frame)."""
+    joints = joints or JOINTS
+    segments = ["pelvis"]
+    out = {}
+    for tag, (s, _) in SIDES.items():
+        segments += [f"{g}_{tag}" for g in SEGMENTS[1:]]
+        for j, (piv, pa, ch) in joints.items():
+            out[f"{j}_{tag}"] = {
+                "pivot": [round(s * (piv[0] + hip_x), 4), piv[1], piv[2]], "axis": "x",
+                "parent": pa if pa == "pelvis" else f"{pa}_{tag}", "child": f"{ch}_{tag}", "range": ranges[j],
+                "label": f"{j.capitalize()} {tag.upper()}"}
+    return segments, out
+
+
+def write_table(spec, path: Path, title: str):
+    lines = [f"# {title} parts", "",
              "Generated by `pack/src/mech_parts.py` from the same data as the models. Do not edit.", "",
              f"{len(spec['parts'])} parts, {spec['total_mass']} kg in total.", "",
              "| Part | Group | Parent | Segment | Mass (kg) | HP | Breaks | Moves | Shielded by | Effect |",
@@ -568,7 +593,8 @@ def write_table(spec):
         lines.append(f"| `{p['id']}` | {p['group']} | {p['parent'] or '-'} | {p['segment']} | {p['mass']:g} | "
                      f"{p['hp']} | {'off' if p['on_break'] == 'detach' else 'in place'} | {p['anim']} | "
                      f"{', '.join(p['shield']) or '-'} | {p['effect']} |")
-    (ROOT / "mech/PARTS.md").write_text("\n".join(lines) + "\n")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n")
 
 
 def tc_num(v: float) -> str:
@@ -591,16 +617,108 @@ def rest_cols(rest) -> list[float]:
     return [R[i][j] for j in range(3) for i in range(3)]
 
 
-def pilot_path(name: str) -> list:
-    """A pilot animation's timeline (mech_pilot.py, from mech/animations/<name>.json)."""
-    k = MECH_SCALE
-    return timeline(name, tuple(c * k for c in SEAT), RECLINE, HIPS_Z, [tuple(c * k for c in g) for g in pilot_grips()])
+# ---------------------------------------------------------------------------
+# Mech types. Each type is built in its own modules and described by a dict
+# (see walker()); everything after that is the same for every type.
+# ---------------------------------------------------------------------------
+
+def walker() -> dict:
+    """The walker: the heavy two-legged mech (this file, mech_pelvis.py and
+    mech_torso.py)."""
+    build_leg()
+    torso, guns, torso_segs, torso_joints = torso_parts()
+    ranges = joint_ranges()
+    segments, joints = leg_joints(ranges, HIP_X)
+    return {
+        "name": "walker", "label": "Walker", "folder": "", "spec_dir": "mech", "anims": "",
+        "about": "The walker: a heavy turret on two digitigrade legs, two rotary cannons and two roof machine guns.",
+        "scale": MECH_SCALE, "hip_x": HIP_X,
+        "folders": [("pelvis", pelvis_parts(HIP_X)), ("leg", place_leg("l") + place_leg("r")), ("torso", torso),
+                    ("guns", guns)],
+        "segments": segments + torso_segs, "joints": {**joints, **torso_joints},
+        "seat": SEAT, "eye": PILOT_EYE, "recline": RECLINE, "hips_z": HIPS_Z, "grips": pilot_grips(),
+        "gait": GAIT, "gait_lengths": GAIT_LENGTHS, "kneel_pose": KNEEL_POSE, "probes": PROBES,
+        "hatch": (ROOF_Y, HATCH_Z), "muzzles": muzzles(), "camera_eye": CAMERA_EYE,
+        "tints": [t["default"] for t in TINTS], "pistons": PISTONS, "ranges": ranges,
+    }
 
 
-def write_tc_data(spec) -> None:
-    """tc/mech_data.tc: the segments, joints and parts for the plot code."""
+def all_types() -> list[dict]:
+    """Every mech type, in game order (the game's type numbers start at 1)."""
+    from mech_sprinter import sprinter
+    return [walker(), sprinter()]
+
+
+def pilot_path(t: dict, name: str) -> list:
+    """A pilot animation's timeline (mech_pilot.py, from mech/animations/<anims><name>.json)."""
+    k = t["scale"]
+    return timeline(t["anims"] + name, tuple(c * k for c in t["seat"]), t["recline"], t["hips_z"],
+                    [tuple(c * k for c in g) for g in t["grips"]])
+
+
+def guns_of(t: dict) -> list:
+    """The guns as (kind, elevation joint, muzzle (design units), traverse joint, side)."""
+    out = []
+    for kind, joint, pt in t["muzzles"]:
+        out.append((kind, joint, pt, joint.replace("elev_", "trav_"), joint[-1]))
+    return out
+
+
+def make_spec(t: dict, folder_of: dict) -> dict:
+    """The part spec of type t (mech/parts.json for the walker)."""
+    K = t["scale"]
+    allp = [p for _, ps in t["folders"] for p in ps]
+    joints = copy.deepcopy(t["joints"])
+    for j in joints.values():
+        j["pivot"] = [round(c * K, 4) for c in j["pivot"]]
+    return {
+        "type": t["name"], "label": t["label"], "about": t["about"],
+        "frame": "+X left, +Y up, +Z forward; meters (scaled); origin on the ground midway between the hips",
+        "model_scale": MODEL_SCALE,
+        "placement": "item display at the mech origin; matrix = mech * segment(pose) * translate(pivot) * "
+                     "rotate_xyz(rest). aim parts instead sit at their posed pivot with local +Y turned toward "
+                     "their posed links.to point. The pack scales the half-size models back to 1:1.",
+        "scale": K,
+        "hip_x": round(t["hip_x"] * K, 4),
+        "cockpit_seat": [round(c * K, 4) for c in t["seat"]],
+        "cockpit_eye": [round(c * K, 4) for c in t["eye"]],
+        "cockpit_recline": t["recline"],
+        "gait": gait_scaled(t["gait"], K, t["gait_lengths"]),
+        "kneel_pose": t["kneel_pose"],
+        "board_path": pilot_path(t, "board"),
+        "exit_path": pilot_path(t, "exit"),
+        "probes": [[f, round(x * K, 4), round(y * K, 4), round(z * K, 4)] for f, x, y, z in t["probes"]],
+        "hatch_center": [0, round(t["hatch"][0] * K, 4), round(t["hatch"][1] * K, 4)],
+        "camera_eye": [round(c * K, 4) for c in t["camera_eye"]],
+        "guns": [{"kind": k, "elevation": j, "traverse": tj, "side": sd, "muzzle": [round(c * K, 4) for c in pt]}
+                 for k, j, pt, tj, sd in guns_of(t)],
+        "segments": t["segments"],
+        "joints": joints,
+        "anims": {"fixed": "rigid with its segment",
+                  "aim": "at its pivot on its segment, local +Y aimed at links.to on links.to_segment (pistons)",
+                  "spin_z": "rigid with its segment, then turned about its own local Z (heavy gun barrels)",
+                  "hinge_x": "rigid with its segment, then turned about its own local X at its pivot (the "
+                             "roof hatch, hinged at its rear edge; negative opens it)"},
+        "tints": {"0": "armor paint", "1": "accent (stripes, trims, air tanks)"},
+        "tint_defaults": ["#%06x" % c for c in t["tints"]],
+        "damage_state": "custom_model_data string 0 = \"damaged\" swaps to the _damaged model",
+        "total_mass": round(sum(p.mass for p in allp), 1),
+        "parts": [{
+            "id": p.id, "label": p.label, "group": p.group, "parent": p.parent, "segment": p.segment,
+            "item_model": f"{NS}:{folder_of[p.id]}/{p.id}", "pivot": list(p.pivot), "rest": list(p.rest),
+            "anim": p.anim, "mass": p.mass, "hp": p.hp, "on_break": p.on_break, "effect": p.effect,
+            "shield": p.shield, "damaged_model": p.damaged, "hitbox": hitbox(p.elems), "links": p.links,
+            "elements": len(p.elems),
+        } for p in allp],
+    }
+
+
+def tc_type_funcs(n: str, spec: dict) -> str:
+    """The data functions of one type for the plot code, named n + what they
+    hold (walkerSegData, ...); mech_data.tc's mech* functions pick the
+    current type's."""
     segs = spec["segments"]
-    sidx = {s: n + 1 for n, s in enumerate(segs)}
+    sidx = {s: i + 1 for i, s in enumerate(segs)}
     joint_of = {j["child"]: (name, j) for name, j in spec["joints"].items()}
     seg_rows = []
     for s in segs:
@@ -620,177 +738,183 @@ def write_tc_data(spec) -> None:
         part_rows.append(f'"{p["id"]} {p["item_model"]} {sidx[p["segment"]]} {anim} '
                          + " ".join(tc_num(v) for v in nums[:12]) + f" {tseg} "
                          + " ".join(tc_num(v) for v in nums[12:]) + '"')
-    pidx = {q["id"]: n + 1 for n, q in enumerate(spec["parts"])}
+    pidx = {q["id"]: i + 1 for i, q in enumerate(spec["parts"])}
     dmg_rows = []
     for q in spec["parts"]:
         hb = q["hitbox"]
         dmg_rows.append(f'"{q["group"]} {q["hp"]} {1 if q["on_break"] == "detach" else 0} {1 if q["damaged_model"] else 0} '
                         f'{pidx.get(q["parent"], 0)} ' + " ".join(tc_num(v) for v in hb[0] + hb[1]) + '"')
     ind = ",\n        "
-    text = (
-        "// Generated by pack/src/mech_parts.py from mech/parts.json. Do not edit.\n\n"
-        "/** The mech's segments in order (a parent always comes before its\n"
-        " * children), each \"name parent joint axis px py pz lo hi\": the parent's\n"
-        " * index (0 for the root), the joint that turns this segment on its\n"
-        " * parent, the joint axis (x or y, in the mech frame) through the pivot\n"
-        " * (mech frame, meters), and the joint range in degrees. The root row has\n"
-        " * \"-\" for joint and axis. */\n"
-        "function mechSegData(): list {\n    return [\n        " + ind.join(seg_rows) + "\n    ];\n}\n\n"
-        f"/** Number of segments. */\nfunction mechSegCount(): num {{\n    return {len(segs)};\n}}\n\n"
-        "/** The mech's parts in spawn order, each \"id itemModel seg anim px py pz\n"
-        " * xx xy xz yx yy yz zx zy zz tseg tx ty tz\": the segment index the part\n"
-        " * rides, its anim (fixed, aim, spin_z, hinge_x), its pivot (mech frame at rest),\n"
-        " * the columns of its rest rotation, and for aim parts the segment and\n"
-        " * rest point its +Y aims at (tseg 0 otherwise). */\n"
-        "function mechPartData(): list {\n    return [\n        " + ind.join(part_rows) + "\n    ];\n}\n\n"
-        f"/** Number of parts. */\nfunction mechPartCount(): num {{\n    return {len(part_rows)};\n}}\n\n"
-        "/** Each part's damage data, in mechPartData order: \"group hp detach damaged\n"
-        " * parent minx miny minz maxx maxy maxz\": its group (armor, structure,\n"
-        " * actuator, ...), its hit points, 1 if it breaks off at 0 (else it stays\n"
-        " * and fails), 1 if it has a damaged model (custom model data string\n"
-        " * \"damaged\"), its parent part's index (0 for none: a part breaking off\n"
-        " * takes its children with it), and its hitbox in its own frame (m). */\n"
-        "function mechPartDamage(): list {\n    return [\n        " + ind.join(dmg_rows) + "\n    ];\n}\n\n"
-        f"/** The scale the mech was built at (MECH_SCALE): sizes in the gait are\n * given at the design size and multiplied by this. */\nfunction mechScale(): num {{\n    return {tc_num(MECH_SCALE)};\n}}\n\n"
-        "/** The procedural walk's numbers (GAIT in pack/src/mech_lib.py, at real\n"
-        " * size): lengths in meters, speeds in m/s, times in seconds, angles in\n"
-        " * degrees. */\n"
-        "function mechGait(): dict {\n    return {"
-        + ", ".join(f"{k_}: {tc_num(v)}" for k_, v in spec["gait"].items()) + "};\n}\n\n"
-        "/** Collision probes, each \"frame x y z\" (mech frame, meters): points that\n"
-        " * must stay out of solid blocks. Frame \"body\" turns with the heading,\n"
-        " * \"torso\" with the torso. */\n"
-        "function mechProbes(): list {\n    return [\n        "
-        + ",\n        ".join(f'"{f} {tc_num(x)} {tc_num(y)} {tc_num(z)}"' for f, x, y, z in spec["probes"])
+    v = lambda c: "vec(" + ", ".join(tc_num(x) for x in c) + ")"
+    guns = ", ".join(f'["{g["kind"]}", "{g["elevation"]}", {v(g["muzzle"])}, "{g["traverse"]}", "{g["side"]}"]'
+                     for g in spec["guns"])
+    return (
+        f"// ---------------------------------------------------------------- {spec['label']}\n\n"
+        f"function {n}SegData(): list {{\n    return [\n        " + ind.join(seg_rows) + "\n    ];\n}\n\n"
+        f"function {n}SegCount(): num {{\n    return {len(segs)};\n}}\n\n"
+        f"function {n}PartData(): list {{\n    return [\n        " + ind.join(part_rows) + "\n    ];\n}\n\n"
+        f"function {n}PartCount(): num {{\n    return {len(part_rows)};\n}}\n\n"
+        f"function {n}PartDamage(): list {{\n    return [\n        " + ind.join(dmg_rows) + "\n    ];\n}\n\n"
+        f"function {n}Scale(): num {{\n    return {tc_num(spec['scale'])};\n}}\n\n"
+        f"function {n}Gait(): dict {{\n    return {{"
+        + ", ".join(f"{k_}: {tc_num(x)}" for k_, x in spec["gait"].items()) + "};\n}\n\n"
+        f"function {n}Probes(): list {{\n    return [\n        "
+        + ind.join(f'"{f} {tc_num(x)} {tc_num(y)} {tc_num(z)}"' for f, x, y, z in spec["probes"])
         + "\n    ];\n}\n\n"
-        "/** The parked kneel (degrees per leg joint): down on the left knee. */\n"
-        "function mechKneelPose(): dict {\n    return {"
-        + ", ".join(f"{k_}: {tc_num(v)}" for k_, v in spec["kneel_pose"].items()) + "};\n}\n\n"
-        "/** The roof hatch's center, on top of the roof, in the mech frame at rest (m):\n"
-        " * boarding drops the pilot in through it. */\n"
-        "function mechHatchCenter(): vec {\n    return vec(0, "
-        + tc_num(ROOF_Y * MECH_SCALE) + ", " + tc_num(HATCH_Z * MECH_SCALE) + ");\n}\n\n"
-        "/** The guns: [kind (heavy or light), the elevation joint that aims it, its\n"
-        " * muzzle in the mech frame at rest (m)]. Rounds leave along +Z of that\n"
-        " * joint's segment. */\n"
-        "function mechMuzzles(): list {\n    return ["
-        + ", ".join(f'["{kind}", "{joint}", vec({", ".join(tc_num(c * MECH_SCALE) for c in pt)})]' for kind, joint, pt in muzzles())
-        + "];\n}\n\n"
-        "/** Where the pilot's eye goes in camera view: just ahead of the roof camera\n"
-        " * pod's lenses, in the mech frame at rest (m); it turns with the torso. */\n"
-        "function mechCameraEye(): vec {\n    return vec("
-        + ", ".join(tc_num(c * MECH_SCALE) for c in CAMERA_EYE) + ");\n}\n\n"
-        "/** The pilot's seat: the top center of the chair's seat in the mech frame\n"
-        " * at rest (it turns with the torso). A rider's eyes are 1.03 m above it. */\n"
-        "function mechCockpitSeat(): vec {\n    return vec("
-        + ", ".join(tc_num(v) for v in spec["cockpit_seat"]) + ");\n}\n\n"
-        "/** Default armor paint and accent colors. */\n"
-        "function mechDefaultColors(): list {\n    return ["
-        + ", ".join(f"0x{c[1:].upper()}" for c in spec["tint_defaults"]) + "];\n}\n"
+        f"function {n}KneelPose(): dict {{\n    return {{"
+        + ", ".join(f"{k_}: {tc_num(x)}" for k_, x in spec["kneel_pose"].items()) + "};\n}\n\n"
+        f"function {n}HatchCenter(): vec {{\n    return {v(spec['hatch_center'])};\n}}\n\n"
+        f"function {n}Muzzles(): list {{\n    return [{guns}];\n}}\n\n"
+        f"function {n}CameraEye(): vec {{\n    return {v(spec['camera_eye'])};\n}}\n\n"
+        f"function {n}CockpitSeat(): vec {{\n    return {v(spec['cockpit_seat'])};\n}}\n\n"
+        f"function {n}DefaultColors(): list {{\n    return ["
+        + ", ".join(f"0x{c[1:].upper()}" for c in spec["tint_defaults"]) + "];\n}\n\n"
+    )
+
+
+# The data functions every type has: (name, type, what it holds).
+TC_FUNCS = [
+    ("SegData", "list", "The mech's segments in order (a parent always comes before its children),\n"
+     " * each \"name parent joint axis px py pz lo hi\": the parent's index (0 for the\n"
+     " * root), the joint that turns this segment on its parent, the joint axis (x\n"
+     " * or y, in the mech frame) through the pivot (mech frame, meters), and the\n"
+     " * joint range in degrees. The root row has \"-\" for joint and axis."),
+    ("SegCount", "num", "Number of segments."),
+    ("PartData", "list", "The mech's parts in spawn order, each \"id itemModel seg anim px py pz\n"
+     " * xx xy xz yx yy yz zx zy zz tseg tx ty tz\": the segment index the part\n"
+     " * rides, its anim (fixed, aim, spin_z, hinge_x), its pivot (mech frame at\n"
+     " * rest), the columns of its rest rotation, and for aim parts the segment and\n"
+     " * rest point its +Y aims at (tseg 0 otherwise)."),
+    ("PartCount", "num", "Number of parts."),
+    ("PartDamage", "list", "Each part's damage data, in mechPartData order: \"group hp detach damaged\n"
+     " * parent minx miny minz maxx maxy maxz\": its group (armor, structure,\n"
+     " * actuator, ...), its hit points, 1 if it breaks off at 0 (else it stays\n"
+     " * and fails), 1 if it has a damaged model (custom model data string\n"
+     " * \"damaged\"), its parent part's index (0 for none: a part breaking off\n"
+     " * takes its children with it), and its hitbox in its own frame (m)."),
+    ("Scale", "num", "The scale the mech was built at: sizes in the gait are given at the design\n"
+     " * size and multiplied by this."),
+    ("Gait", "dict", "The procedural walk's numbers (at real size): lengths in meters, speeds\n"
+     " * in m/s, times in seconds, angles in degrees."),
+    ("Probes", "list", "Collision probes, each \"frame x y z\" (mech frame, meters): points that\n"
+     " * must stay out of solid blocks. Frame \"body\" turns with the heading,\n"
+     " * \"torso\" with the torso."),
+    ("KneelPose", "dict", "The parked kneel (degrees per leg joint): down on the left knee."),
+    ("HatchCenter", "vec", "The roof hatch's center, on top of the roof, in the mech frame at rest (m)."),
+    ("Muzzles", "list", "The guns: [kind (heavy or light), the elevation joint that aims it, its\n"
+     " * muzzle in the mech frame at rest (m), the traverse joint that turns it,\n"
+     " * its side (l, r, or c for one in the middle)]. Rounds leave along +Z of the\n"
+     " * elevation joint's segment."),
+    ("CameraEye", "vec", "Where the pilot's eye goes in camera view: just ahead of the roof camera's\n"
+     " * lenses, in the mech frame at rest (m); it turns with the torso."),
+    ("CockpitSeat", "vec", "The pilot's seat: the top center of the chair's seat in the mech frame at\n"
+     " * rest (it turns with the torso)."),
+    ("DefaultColors", "list", "Default armor paint and accent colors."),
+]
+
+
+def write_tc_data(specs: list[dict], stamp: str) -> None:
+    """tc/mech_data.tc: every type's data for the plot code, and mech*
+    functions that return the current type's (global curType, mech.tc)."""
+    names = [s["type"] for s in specs]
+    disp = []
+    for f, typ, doc in TC_FUNCS:
+        body = "".join(f"    if (global curType == {i + 1}) {{\n        return {n}{f}();\n    }}\n"
+                       for i, n in enumerate(names) if i > 0)
+        disp.append(f"/** {doc} */\nfunction mech{f}(): {typ} {{\n{body}    return {names[0]}{f}();\n}}\n")
+    text = (
+        "// Generated by pack/src/mech_parts.py from mech/parts.json and the other\n"
+        "// types' specs. Do not edit.\n\n"
+        "/** The mech types, in order (a mech's type is its number here). */\n"
+        "function mechTypeNames(): list {\n    return [" + ", ".join(f'"{n}"' for n in names) + "];\n}\n\n"
+        "/** Changes whenever any of the data below changes, so parsed copies of it\n"
+        " * (which outlive a code update) are thrown away. */\n"
+        f"function mechDataStamp(): str {{\n    return \"{stamp}\";\n}}\n\n"
+        "// The current type's data (global curType; mech.tc's useType sets it).\n\n"
+        + "\n".join(disp) + "\n"
+        + "".join(tc_type_funcs(n, s) for n, s in zip(names, specs))
     )
     (ROOT / "tc").mkdir(exist_ok=True)
-    (ROOT / "tc/mech_data.tc").write_text(text)
+    (ROOT / "tc/mech_data.tc").write_text(text.rstrip() + "\n")
 
 
 def main():
-    build_leg()
-    pelvis = pelvis_parts(HIP_X)
-    legs = place_leg("l") + place_leg("r")
-    torso, guns, torso_segs, torso_joints = torso_parts()
-    folders = [("pelvis", pelvis), ("leg", legs), ("torso", torso), ("guns", guns)]
-    allp = pelvis + legs + torso + guns
-    for p in allp:
-        scale_part(p, MECH_SCALE)
-    ids = [p.id for p in allp]
-    if len(set(ids)) != len(ids):
-        raise SystemExit("duplicate part ids")
-    for p in allp:
-        if p.parent and p.parent not in ids:
-            raise SystemExit(f"{p.id}: unknown parent {p.parent}")
-        for x in p.shield:
-            if x not in ids:
-                raise SystemExit(f"{p.id}: unknown shield {x}")
+    types = all_types()
+    for t in types:
+        allp = [p for _, ps in t["folders"] for p in ps]
+        for p in allp:
+            scale_part(p, t["scale"])
+        ids = [p.id for p in allp]
+        if len(set(ids)) != len(ids):
+            raise SystemExit(f"{t['name']}: duplicate part ids")
+        for p in allp:
+            if p.parent and p.parent not in ids:
+                raise SystemExit(f"{t['name']}: {p.id}: unknown parent {p.parent}")
+            for x in p.shield:
+                if x not in ids:
+                    raise SystemExit(f"{t['name']}: {p.id}: unknown shield {x}")
+    if len({len(t["folders"]) for t in types}) < 1:
+        raise SystemExit("no types")
+    # the damage model and the gait look these parts and joints up by name
+    need = (["pelvis", "waist_ring", "power_pack", "compressor", "torso_frame", "torso_top", "torso_side_l",
+             "torso_side_r", "cockpit", "sensors", "ammo_bustle", "antenna"]
+            + [f"{n}_{s}" for s in "lr" for n in ("hip_mount", "hip_motor", "air_tank", "thigh", "knee_motor", "shin",
+                                                   "shin_armor", "ankle_motor", "foot", "foot_armor")]
+            + [f"{j}_piston_{k}_{s}" for j in ("hip", "knee", "ankle") for k in ("cyl", "rod") for s in "lr"])
+    for t in types:
+        ids = {p.id for _, ps in t["folders"] for p in ps}
+        missing = [x for x in need if x not in ids]
+        for kind, joint, pt, tj, side in guns_of(t):
+            pre = "heavy" if kind == "heavy" else "light"
+            parts = [f"{pre}_gun_{side}", f"{pre}_mount_{side}"] + ([f"heavy_barrels_{side}"] if pre == "heavy" else [])
+            missing += [x for x in parts if x not in ids]
+            missing += [x for x in (joint, tj) if x not in t["joints"]]
+        if missing:
+            raise SystemExit(f"{t['name']}: missing {missing}")
     used = set()
-    for p in allp:
-        for e in p.elems:
-            used.add(e.mat)
-            if p.damaged:
-                used.add(MATERIALS[e.mat].get("dmg", e.mat))
+    for t in types:
+        for _, ps in t["folders"]:
+            for p in ps:
+                for e in p.elems:
+                    used.add(e.mat)
+                    if p.damaged:
+                        used.add(MATERIALS[e.mat].get("dmg", e.mat))
     textures = write_textures(used)
-    models = {}
-    folder_of = {}
-    for folder, parts in folders:
-        models.update(write_models(folder, parts))
-        folder_of.update({p.id: folder for p in parts})
-    ranges = joint_ranges()
-    joints = {}
-    segments = ["pelvis"]
-    for tag, (s, _) in SIDES.items():
-        segments += [f"{g}_{tag}" for g in SEGMENTS[1:]]
-        for j, (piv, pa, ch) in JOINTS.items():
-            joints[f"{j}_{tag}"] = {
-                "pivot": [round(s * (piv[0] + HIP_X), 4), piv[1], piv[2]], "axis": "x",
-                "parent": pa if pa == "pelvis" else f"{pa}_{tag}", "child": f"{ch}_{tag}", "range": ranges[j],
-                "label": f"{j.capitalize()} {tag.upper()}"}
-    segments += torso_segs
-    joints.update(torso_joints)
-    for j in joints.values():
-        j["pivot"] = [round(c * MECH_SCALE, 4) for c in j["pivot"]]
-    spec = {
-        "frame": "+X left, +Y up, +Z forward; meters (scaled); origin on the ground midway between the hips",
-        "model_scale": MODEL_SCALE,
-        "placement": "item display at the mech origin; matrix = mech * segment(pose) * translate(pivot) * "
-                     "rotate_xyz(rest). aim parts instead sit at their posed pivot with local +Y turned toward "
-                     "their posed links.to point. The pack scales the half-size models back to 1:1.",
-        "scale": MECH_SCALE,
-        "hip_x": round(HIP_X * MECH_SCALE, 4),
-        "cockpit_seat": [round(c * MECH_SCALE, 4) for c in SEAT],
-        "cockpit_eye": [round(c * MECH_SCALE, 4) for c in PILOT_EYE],
-        "cockpit_recline": RECLINE,
-        "gait": gait_scaled(),
-        "kneel_pose": KNEEL_POSE,
-        "board_path": pilot_path("board"),
-        "exit_path": pilot_path("exit"),
-        "probes": [[f, round(x * MECH_SCALE, 4), round(y * MECH_SCALE, 4), round(z * MECH_SCALE, 4)]
-                   for f, x, y, z in PROBES],
-        "segments": segments,
-        "joints": joints,
-        "anims": {"fixed": "rigid with its segment",
-                  "aim": "at its pivot on its segment, local +Y aimed at links.to on links.to_segment (pistons)",
-                  "spin_z": "rigid with its segment, then turned about its own local Z (heavy gun barrels)",
-                  "hinge_x": "rigid with its segment, then turned about its own local X at its pivot (the "
-                             "roof hatch, hinged at its rear edge; negative opens it)"},
-        "tints": {"0": "armor paint", "1": "accent (stripes, trims, air tanks)"},
-        "tint_defaults": ["#%06x" % t["default"] for t in TINTS],
-        "damage_state": "custom_model_data string 0 = \"damaged\" swaps to the _damaged model",
-        "total_mass": round(sum(p.mass for p in allp), 1),
-        "parts": [{
-            "id": p.id, "label": p.label, "group": p.group, "parent": p.parent, "segment": p.segment,
-            "item_model": f"{NS}:{folder_of[p.id]}/{p.id}", "pivot": list(p.pivot), "rest": list(p.rest),
-            "anim": p.anim, "mass": p.mass, "hp": p.hp, "on_break": p.on_break, "effect": p.effect,
-            "shield": p.shield, "damaged_model": p.damaged, "hitbox": hitbox(p.elems), "links": p.links,
-            "elements": len(p.elems),
-        } for p in allp],
-    }
-    (ROOT / "mech").mkdir(exist_ok=True)
     for old in ("mech/leg_parts.json", "mech/LEG_PARTS.md", "tools/viewer/leg_data.js"):
         (ROOT / old).unlink(missing_ok=True)
-    (ROOT / "mech/parts.json").write_text(json.dumps(spec, indent=1) + "\n")
-    write_table(spec)
-    write_tc_data(spec)
-    write_pilot(spec["board_path"], spec["exit_path"])
-    viewer = ROOT / "tools/viewer"
-    viewer.mkdir(parents=True, exist_ok=True)
-    (viewer / "mech_data.js").write_text("// Generated by pack/src/mech_parts.py. Do not edit.\nwindow.MECH = "
-                                         + json.dumps({"spec": spec, "models": models, "textures": textures}) + ";\n")
-    n_el = sum(len(p.elems) for p in allp)
-    print(f"{len(allp)} parts ({len(pelvis)} pelvis, {len(PARTS)} per leg, {len(torso)} torso, {len(guns)} guns), "
-          f"{n_el} elements, "
-          f"{len(textures)} textures, {spec['total_mass']} kg")
-    for name, ((A, _), (B, _)) in PISTONS.items():
-        print(f"  {name} piston: rest length {math.dist(A, B):.3f} m")
-    for j, r in ranges.items():
-        print(f"  {j}: {r[0]}..{r[1]} deg")
+    specs, viewer = [], {}
+    for t in types:
+        models, folder_of = {}, {}
+        for folder, parts in t["folders"]:
+            path = t["folder"] + folder
+            models.update(write_models(path, parts, t["tints"]))
+            folder_of.update({p.id: path for p in parts})
+        spec = make_spec(t, folder_of)
+        specs.append(spec)
+        d = ROOT / t["spec_dir"]
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "parts.json").write_text(json.dumps(spec, indent=1) + "\n")
+        write_table(spec, d / "PARTS.md", t["label"])
+        viewer[t["name"]] = {"spec": spec, "models": models}
+        allp = [p for _, ps in t["folders"] for p in ps]
+        n_el = sum(len(p.elems) for p in allp)
+        print(f"{t['name']}: {len(allp)} parts, {n_el} elements, {spec['total_mass']} kg, "
+              f"{spec['scale']}x, hips {spec['joints']['hip_l']['pivot'][1]} m up, "
+              f"top speed {spec['gait']['max_speed']} m/s")
+        for name, ((A, _), (B, _)) in t["pistons"].items():
+            print(f"  {name} piston: rest length {math.dist(A, B):.3f}")
+        for j, r in t["ranges"].items():
+            print(f"  {j}: {r[0]}..{r[1]} deg")
+    stamp = hashlib.sha1(json.dumps(specs, sort_keys=True).encode()).hexdigest()[:12]
+    write_tc_data(specs, stamp)
+    write_pilot([(s["type"], s["board_path"], s["exit_path"]) for s in specs])
+    vdir = ROOT / "tools/viewer"
+    vdir.mkdir(parents=True, exist_ok=True)
+    (vdir / "mech_data.js").write_text(
+        "// Generated by pack/src/mech_parts.py. Do not edit.\n"
+        "window.MECH_TEXTURES = " + json.dumps(textures) + ";\n"
+        "window.MECHS = " + json.dumps(viewer) + ";\n")
+    print(f"{len(textures)} textures, data stamp {stamp}")
 
 
 if __name__ == "__main__":

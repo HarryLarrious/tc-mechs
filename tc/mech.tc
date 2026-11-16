@@ -28,6 +28,15 @@
 // matrix too.
 //
 // The roof hatch ("hinge_x") turns about its hinge's X by mHatch (pilot.tc).
+//
+// Mech types: every mech has a type (mType: 1 the walker, 2 the sprinter;
+// mechTypeNames), each with its own generated data (mech_data.tc,
+// pilot_data.tc). The parsed data (mSeg, mPart, the gait's numbers, the
+// guns, the damage data, the boarding timelines...) is in globals that hold
+// one type at a time: useType(t) / useMech(m) make a type current, parsing
+// its data the first time and keeping a copy per type (tCache). Anything that
+// works on a mech calls useMech(m) first, and anything that goes on to
+// another mech puts its own type back after.
 
 /** Display UUIDs of each mech's parts, in mechPartData order, and the same
  * UUIDs by draw group (mGroup order). */
@@ -54,6 +63,15 @@ declare global mPaint: list[num];
 declare global mAccent: list[num];
 /** Number of mechs. */
 declare global mechCount: num;
+/** Per mech: its type (index into mechTypeNames). */
+declare global mType: list[num];
+/** The current type (whose data the parsed globals hold), and each type's
+ * parsed data by "t<type>" (see saveType), with the data version and stamp
+ * they were parsed from. */
+declare global curType: num;
+declare global tCache: dict;
+declare global tCacheVer: num;
+declare global tCacheStamp: str;
 
 /** Parsed mechSegData: per segment [name, parent, joint, axis, pivot, lo, hi]. */
 declare global mSeg: list;
@@ -65,20 +83,131 @@ declare global mPart: list;
  * group index. */
 declare global mGroup: list;
 declare global mPartGroup: list[num];
-/** Which version of the parsed data is loaded (bumped when its shape changes,
- * since globals outlive a code update). */
-declare global mechLoaded: num;
-
-/** The parsed data's current version. */
+/** The parsed data's shape (bumped when it changes, since globals outlive a
+ * code update; changes to the data itself change mechDataStamp). */
 function mechDataVersion(): num {
-    return 12;
+    return 13;
 }
 
-/** Parses the generated data once. */
-function loadMechData {
-    if (global mechLoaded == mechDataVersion()) {
+/** Makes type t current: the parsed globals hold its data. */
+function useType(t: num) {
+    if (global tCacheVer != mechDataVersion() || global tCacheStamp != mechDataStamp()) {
+        global tCache = {};
+        global tCacheVer = mechDataVersion();
+        global tCacheStamp = mechDataStamp();
+        global curType = 0;
+    }
+    if (global curType == t) {
         return;
     }
+    global curType = t;
+    line key = "t%var(t)";
+    if (global tCache.hasKeys(line key)) {
+        restoreType(global tCache[line key] as dict);
+        return;
+    }
+    loadMechData();
+    loadDamage();
+    loadWeapons();
+    loadGait();
+    global tCache[line key] = saveType();
+}
+
+/** Makes mech m's type current. */
+function useMech(m: num) {
+    useType(global mType[m]);
+}
+
+/** The current type's parsed data, as a dict. */
+function saveType(): dict {
+    line d = {};
+    line d["mSeg"] = global mSeg;
+    line d["mPart"] = global mPart;
+    line d["mGroup"] = global mGroup;
+    line d["mPartGroup"] = global mPartGroup;
+    line d["mDmg"] = global mDmg;
+    line d["mPartIdx"] = global mPartIdx;
+    line d["wGuns"] = global wGuns;
+    line d["pPath"] = global pPath;
+    line d["pExit"] = global pExit;
+    line d["tProbes"] = global tProbes;
+    line d["tFootSamples"] = global tFootSamples;
+    line d["gSegs"] = global gSegs;
+    line d["gKneelJ"] = global gKneelJ;
+    line d["gHip"] = global gHip;
+    line d["gAnkle"] = global gAnkle;
+    line n = [global gL1, global gL2, global gT0a, global gPhi0, global gBend, global gCrouch, global gSwing, global gLift, global gBob, global gStep,
+              global gSettle, global gLead, global gMaxSpeed, global gAccel, global gMaxTurn, global gTurnAccel, global gAimRate, global gToe, global gMaxRise, global gUp,
+              global gDown, global gClimb, global gMargin, global gMaxReach, global gGravity, global gMaxFall, global gLandDip, global gDipRate, global gFallDrift, global gPilotAimRate,
+              global gKneelDrop, global gKneelTime, global gAgile, global gStrafe, global gJumpMin, global gJumpMax, global gChargeTime];
+    line d["n"] = line n;
+    return line d;
+}
+
+/** Puts a type's parsed data (saveType) back in the globals. */
+function restoreType(d: dict) {
+    global mSeg = d["mSeg"] as list;
+    global mPart = d["mPart"] as list;
+    global mGroup = d["mGroup"] as list;
+    global mPartGroup = d["mPartGroup"] as list[num];
+    global mDmg = d["mDmg"] as list;
+    global mPartIdx = d["mPartIdx"] as dict[num];
+    global wGuns = d["wGuns"] as list;
+    global pPath = d["pPath"] as list;
+    global pExit = d["pExit"] as list;
+    global tProbes = d["tProbes"] as list;
+    global tFootSamples = d["tFootSamples"] as list[vec];
+    global gSegs = d["gSegs"] as list[num];
+    global gKneelJ = d["gKneelJ"] as list[num];
+    global gHip = d["gHip"] as vec;
+    global gAnkle = d["gAnkle"] as vec;
+    line n = d["n"] as list[num];
+    global gL1 = line n[1];
+    global gL2 = line n[2];
+    global gT0a = line n[3];
+    global gPhi0 = line n[4];
+    global gBend = line n[5];
+    global gCrouch = line n[6];
+    global gSwing = line n[7];
+    global gLift = line n[8];
+    global gBob = line n[9];
+    global gStep = line n[10];
+    global gSettle = line n[11];
+    global gLead = line n[12];
+    global gMaxSpeed = line n[13];
+    global gAccel = line n[14];
+    global gMaxTurn = line n[15];
+    global gTurnAccel = line n[16];
+    global gAimRate = line n[17];
+    global gToe = line n[18];
+    global gMaxRise = line n[19];
+    global gUp = line n[20];
+    global gDown = line n[21];
+    global gClimb = line n[22];
+    global gMargin = line n[23];
+    global gMaxReach = line n[24];
+    global gGravity = line n[25];
+    global gMaxFall = line n[26];
+    global gLandDip = line n[27];
+    global gDipRate = line n[28];
+    global gFallDrift = line n[29];
+    global gPilotAimRate = line n[30];
+    global gKneelDrop = line n[31];
+    global gKneelTime = line n[32];
+    global gAgile = line n[33];
+    global gStrafe = line n[34];
+    global gJumpMin = line n[35];
+    global gJumpMax = line n[36];
+    global gChargeTime = line n[37];
+}
+
+/** The type numbered by its name ("walker", "sprinter"), or 0. */
+function mechTypeOf(name: str): num {
+    return mechTypeNames().find(name);
+}
+
+/** Parses the current type's generated data (useType). */
+function loadMechData {
     global mSeg = [];
     for (line row of mechSegData()) {
         line s = (line row as str).split(" ");
@@ -122,7 +251,6 @@ function loadMechData {
         }
     }
     loadPilotPath();
-    global mechLoaded = mechDataVersion();
 }
 
 /** How far above the ground the displays' anchor is (m), and the size of
@@ -257,12 +385,12 @@ function mechRender(m: num, dur: num = 0) {
     }
 }
 
-/** Spawns a mech with its origin at `at`, facing at's yaw, in the given
- * armor paint and accent colors, standing in its rest pose. Returns its
- * number. */
-function spawnMech(at: loc, paint: num, accent: num): num {
-    loadMechData();
+/** Spawns a mech of type `kind` with its origin at `at`, facing at's yaw, in
+ * the given armor paint and accent colors, standing in its rest pose.
+ * Returns its number. */
+function spawnMech(at: loc, paint: num, accent: num, kind: num = 1): num {
     dropStaleMechs();
+    useType(kind);
     line origin = loc(at.x, at.y, at.z, 0, 0);
     line ids = [];
     for (line pp of global mPart) {
@@ -288,6 +416,7 @@ function spawnMech(at: loc, paint: num, accent: num): num {
         line gids[line g] = line members;
     }
     global mechCount += 1;
+    global mType.append(kind);
     global mAll.append(line ids);
     global mGroupIds.append(line gids);
     global mPos.append(vec(at.x, at.y, at.z));
@@ -320,17 +449,21 @@ function spawnMech(at: loc, paint: num, accent: num): num {
     return global mechCount;
 }
 
-/** Spawns a mech 20 blocks in front of the player at their feet level, in
- * the default colors, facing them (turned by `turn` degrees from that). */
-function spawnMechHere(turn: num = 0) {
+/** Spawns a mech of type `kind` 20 blocks in front of the player at their
+ * feet level, in its default colors, facing them (turned by `turn` degrees
+ * from that). */
+function spawnMechHere(turn: num = 0, kind: num = 1) {
+    useType(kind);
     line feet = default.location;
     line yaw: num = line feet.getCoordinate(coord="Yaw");
     line at = loc(line feet.x, line feet.y, line feet.z, 0, line yaw);
     line at = line at.shiftInDirection(20, direction="Forward");
     line at = loc(line at.x, line at.y, line at.z, 0, line yaw + 180 + turn);
     line cols = mechDefaultColors();
-    line m = spawnMech(line at, line cols[1] as num, line cols[2] as num);
-    default.sendMessage(s"<gray>Mech <yellow>%var(m)</yellow> spawned. <yellow>@walk</yellow>, <yellow>@turn</yellow>, <yellow>@follow</yellow> or <yellow>@pose</yellow> it.");
+    line m = spawnMech(line at, line cols[1] as num, line cols[2] as num, kind);
+    line names = mechTypeNames();
+    line name = line names[kind] as str;
+    default.sendMessage(s"<gray>Mech <yellow>%var(m)</yellow> (%var(name)) spawned. <yellow>@walk</yellow>, <yellow>@turn</yellow>, <yellow>@follow</yellow> or <yellow>@pose</yellow> it.");
 }
 
 /** Removes the displays in `ids`. */
@@ -349,6 +482,7 @@ function removeMech(m: num) {
     if (global mGone[m] == 1) {
         return;
     }
+    useMech(m);
     pilotOut(m);
     removeDisplays(global mAll[m] as list);
     select entitiesByName(global mSeat[m]);
@@ -366,6 +500,7 @@ function clearMechs {
     }
     global mAll = [];
     global mGroupIds = [];
+    global mType = [];
     gaitClear();
     weaponsClear();
     damageClear();
@@ -428,7 +563,7 @@ function mechNear(): num {
  * it over 5 ticks. Returns the angle set, or -999 for an unknown joint. While
  * the mech walks, the gait sets the leg joints and the waist every tick. */
 function mechPose(m: num, name: str, deg: num): num {
-    loadMechData();
+    useMech(m);
     line s = mechJointSeg(name);
     if (line s == 0) {
         return -999;
@@ -444,6 +579,7 @@ function mechPose(m: num, name: str, deg: num): num {
 
 /** Puts every joint of mech m back to 0 and redraws it over 5 ticks. */
 function mechPoseReset(m: num) {
+    useMech(m);
     line joints = [];
     repeat (line i to global mSeg.len()) {
         line joints.append(0);
@@ -452,9 +588,9 @@ function mechPoseReset(m: num) {
     mechRender(m, 5);
 }
 
-/** The joint names, space separated (for the @pose help). */
-function mechJointNames(): str {
-    loadMechData();
+/** Mech m's joint names, space separated (for the @pose help). */
+function mechJointNames(m: num): str {
+    useMech(m);
     line out = "";
     for (line s of global mSeg) {
         if ((line s as list)[3] as str != "-") {

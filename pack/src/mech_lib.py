@@ -70,6 +70,14 @@ GAIT = {
     # the left foot behind resting on its toes)
     "kneel_drop": 1.571, # how far the body sinks below the standing rest pose (3.3 m real)
     "kneel_time": 1.5,   # seconds to kneel or stand up
+    # piloting: an agile mech (1) steers where its pilot looks, strafes on A/D,
+    # kneels on Shift (its turret only turns on its own while kneeling) and
+    # jumps on Space (charged); the walker turns on A/D
+    "agile": 0.0,
+    "strafe": 0.0,       # strafing speed, a share of max_speed
+    "jump_min": 0.0,     # m/s (real) straight up, for a jump with no charge and a full one
+    "jump_max": 0.0,
+    "charge_time": 1.0,  # seconds to a full charge
 }
 KNEEL_POSE = {"hip_l": 41.0, "knee_l": 47.0, "ankle_l": -1.0, "hip_r": -102.0, "knee_r": 64.0, "ankle_r": 38.0}
 GAIT_LENGTHS = ("crouch", "lift", "bob", "step", "settle", "max_speed", "accel", "max_rise", "probe_up",
@@ -88,9 +96,10 @@ PROBES = (
 )
 
 
-def gait_scaled() -> dict:
-    """GAIT at real size."""
-    return {k: round(v * MECH_SCALE, 4) if k in GAIT_LENGTHS else v for k, v in GAIT.items()}
+def gait_scaled(gait: dict | None = None, scale: float = MECH_SCALE, lengths=GAIT_LENGTHS) -> dict:
+    """A gait (default the walker's GAIT) at real size."""
+    gait = GAIT if gait is None else gait
+    return {k: round(v * scale, 4) if k in lengths else v for k, v in gait.items()}
 
 
 MODEL_SCALE = 0.2            # models are 1/5 size (parts reach 7.5 m from their pivot); display scale = 5
@@ -489,9 +498,11 @@ UPSCALE = {"translation": [0.5 + 0.5 * S, 0.5 - 0.5 * S, 0.5 + 0.5 * S], "left_r
            "scale": [S] * 3, "right_rotation": [0, 0, 0, 1]}
 
 
-def item_json(folder: str, name: str, has_damaged: bool) -> dict:
+def item_json(folder: str, name: str, has_damaged: bool, tints: list | None = None) -> dict:
+    """An item definition; `tints` are the default paint and accent colors (default TINTS')."""
+    tl = TINTS if tints is None else [dict(t, default=c) for t, c in zip(TINTS, tints)]
     base = {"type": "minecraft:model", "model": f"{NS}:item/{folder}/{name}", "transformation": UPSCALE,
-            "tints": TINTS}
+            "tints": tl}
     if not has_damaged:
         return {"model": base}
     dmg = dict(base, model=f"{NS}:item/{folder}/{name}_damaged")
@@ -541,14 +552,14 @@ def write_textures(used: set[str]) -> dict[str, str]:
     return out
 
 
-def write_models(folder: str, parts: list[Part]) -> dict[str, dict]:
+def write_models(folder: str, parts: list[Part], tints: list | None = None) -> dict[str, dict]:
     """Writes each part's model (and _damaged variant) and item definition
     under `folder`; returns every model for the viewer."""
     mdir = ASSETS / f"models/item/{folder}"
     idir = ASSETS / f"items/{folder}"
     for d in (mdir, idir):
         d.mkdir(parents=True, exist_ok=True)
-        for old in d.glob("*"):
+        for old in d.glob("*.json"):
             old.unlink()
     models = {}
     for i, p in enumerate(parts):
@@ -559,5 +570,5 @@ def write_models(folder: str, parts: list[Part]) -> dict[str, dict]:
             md = model_json(p.elems, True, 1000 + i, folder)
             (mdir / f"{p.id}_damaged.json").write_text(json.dumps(md, indent=1) + "\n")
             models[p.id + "_damaged"] = md
-        (idir / f"{p.id}.json").write_text(json.dumps(item_json(folder, p.id, p.damaged), indent=1) + "\n")
+        (idir / f"{p.id}.json").write_text(json.dumps(item_json(folder, p.id, p.damaged, tints), indent=1) + "\n")
     return models

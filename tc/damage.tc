@@ -31,7 +31,6 @@
  * min, hitbox max, hitbox center, hitbox radius]; part index by id. */
 declare global mDmg: list;
 declare global mPartIdx: dict[num];
-declare global dmgLoaded: num;
 /** Per mech: each part's hit points, 1 once it broke, 1 while it shows its
  * damaged model; what the damage does (see damageStatus); 1 once wrecked. */
 declare global mHp: list;
@@ -62,12 +61,8 @@ function lightMechDamage(): num {
     return 3;
 }
 
-/** Parses the damage data once per data version. */
+/** Parses the current type's damage data (useType, after loadMechData). */
 function loadDamage {
-    if (global dmgLoaded == mechDataVersion()) {
-        return;
-    }
-    loadMechData();
     global mDmg = [];
     global mPartIdx = {};
     line i = 0;
@@ -84,12 +79,10 @@ function loadDamage {
             num.parse(line w[5] as str), line lo, line hi, (line lo + line hi) * 0.5, (line hi - line lo).len() * 0.5]);
         global mPartIdx[(global mPart[line i] as list)[1] as str] = line i;
     }
-    global dmgLoaded = mechDataVersion();
 }
 
 /** Sets up the damage state of a newly spawned mech (every part whole). */
 function damageInit {
-    loadDamage();
     line hp = [];
     line z = [];
     for (line d of global mDmg) {
@@ -184,23 +177,31 @@ function damageStatus(m: num) {
     }
     line st["aim"] = line aim;
     line st["spread"] = (1 - partFrac(m, "sensors")) * 0.02 + (1 - partFrac(m, "torso_frame")) * 0.012;
-    // guns
+    // guns (whichever this type has)
     line ammo = partFrac(m, "ammo_bustle");
-    for (line s of ["l", "r"]) {
+    line jamL = 0;
+    line spreadH = 0;
+    for (line g of global wGuns) {
+        line gl = line g as list;
+        line s = line gl[4] as str;
         line ok = 0;
-        if (partBroken(m, "heavy_gun_%var(s)") == 0 && partBroken(m, "heavy_barrels_%var(s)") == 0 && line ammo > 0) {
-            line ok = 1;
+        if (line gl[1] as num == 1) {
+            if (partBroken(m, "heavy_gun_%var(s)") == 0 && partBroken(m, "heavy_barrels_%var(s)") == 0 && line ammo > 0) {
+                line ok = 1;
+            }
+            line st["heavy_%var(s)"] = line ok;
+            line spreadH += 1 - partFrac(m, "heavy_barrels_%var(s)");
+        } else {
+            if (partBroken(m, "light_gun_%var(s)") == 0 && partBroken(m, "light_mount_%var(s)") == 0) {
+                line ok = 1;
+            }
+            line st["light_%var(s)"] = line ok;
+            line jamL += 1 - partFrac(m, "light_gun_%var(s)");
         }
-        line st["heavy_%var(s)"] = line ok;
-        line ok = 0;
-        if (partBroken(m, "light_gun_%var(s)") == 0 && partBroken(m, "light_mount_%var(s)") == 0) {
-            line ok = 1;
-        }
-        line st["light_%var(s)"] = line ok;
     }
     line st["jamH"] = (1 - line ammo) * 0.5;
-    line st["jamL"] = (2 - partFrac(m, "light_gun_l") - partFrac(m, "light_gun_r")) * 0.2;
-    line st["spreadH"] = (2 - partFrac(m, "heavy_barrels_l") - partFrac(m, "heavy_barrels_r")) * 0.012;
+    line st["jamL"] = line jamL * 0.2;
+    line st["spreadH"] = line spreadH * 0.012;
     line st["blind"] = partBroken(m, "cockpit");
     line st["integrity"] = mechIntegrity(m);
     global mStat[m] = line st;
@@ -526,7 +527,7 @@ function damageSmoke(m: num) {
  * [distance, mech, hits], hits being [distance, part] for every part on the
  * ray, nearest first; [] if it hits none. */
 function mechRayHit(own: num, from: vec, dir: vec, reach: num): list {
-    loadDamage();
+    line was = global curType;
     line best = [];
     line bestD = reach;
     repeat (line m to global mechCount) {
@@ -536,6 +537,7 @@ function mechRayHit(own: num, from: vec, dir: vec, reach: num): list {
             line v = line c - from;
             line tca = line v.dot(dir);
             if (line tca > -9 && line v.dot(line v) - line tca * line tca < 81) {
+                useMech(line m);
                 line hits = mechPartsOnRay(line m, from, dir, line bestD);
                 if (line hits.len() > 0) {
                     line d0 = (line hits[1] as list)[1] as num;
@@ -547,6 +549,7 @@ function mechRayHit(own: num, from: vec, dir: vec, reach: num): list {
             }
         }
     }
+    useType(line was);
     return line best;
 }
 
@@ -617,18 +620,21 @@ function mechPartsOnRay(m: num, from: vec, dir: vec, reach: num): list {
 /** A round doing `amount` damage hits mech m along `dir`: the parts on its
  * way take it in turn until it is spent. */
 function mechTakesRound(m: num, hits: list, amount: num, dir: vec) {
+    line was = global curType;
+    useMech(m);
     line left = amount;
     for (line h of hits) {
         if (line left > 0) {
             line left = damagePart(m, (line h as list)[2] as num, line left, dir);
         }
     }
+    useType(line was);
 }
 
 /** Puts mech m back together: every part whole and back on, damaged models
  * cleared, not wrecked. */
 function repairMech(m: num) {
-    loadDamage();
+    useMech(m);
     line all = global mAll[m] as list;
     line gids = global mGroupIds[m] as list;
     line o = global mPos[m];
@@ -670,12 +676,12 @@ function repairMech(m: num) {
 
 /** @status: the nearest mech's damage, as chat lines. */
 function statusCommand {
-    loadDamage();
     line m = mechNear();
     if (line m == 0) {
         default.sendMessage(s"<gray>No mech here.");
         return;
     }
+    useMech(line m);
     line pct = num.round(mechIntegrity(line m) * 100);
     line mob = num.round(stat(line m, "mob") * 100);
     line aim = num.round(stat(line m, "aim") * 100);
@@ -710,12 +716,12 @@ function statusCommand {
 /** @damage PART AMOUNT | @damage all AMOUNT: damages the nearest mech (a test
  * tool); the push comes from the player. */
 function damageCommand(words: list) {
-    loadDamage();
     line m = mechNear();
     if (line m == 0) {
         default.sendMessage(s"<gray>No mech here.");
         return;
     }
+    useMech(line m);
     if (words.len() < 3) {
         default.sendMessage(s"<gray>Usage: <yellow>@damage PART AMOUNT</yellow> or <yellow>@damage all AMOUNT</yellow> (parts as in <yellow>@status</yellow>, e.g. heavy_gun_l)");
         return;

@@ -11,13 +11,25 @@ playerevent join {
 playerevent command {
     line words = event.command.split(" ");
     line cmd = (line words[1] as str).replace("@", "");
-    if (line cmd == "mech") {
-        // @mech [turn degrees]: spawns a mech facing you (turn 90 shows its side).
-        line turn = 0;
-        if (line words.len() >= 2) {
-            line turn = num.parse(line words[2] as str);
+    if (line cmd == "mech" || line cmd == "sprinter" || line cmd == "walker") {
+        // @mech [walker|sprinter] [turn degrees]: spawns a mech facing you
+        // (turn 90 shows its side); @sprinter and @walker are the same
+        line kind = mechTypeOf(line cmd);
+        line at = 2;
+        if (line kind == 0) {
+            line kind = 1;
+            if (line words.len() >= 2) {
+                if (mechTypeOf(line words[2] as str) != 0) {
+                    line kind = mechTypeOf(line words[2] as str);
+                    line at = 3;
+                }
+            }
         }
-        spawnMechHere(line turn);
+        line turn = 0;
+        if (line words.len() >= line at) {
+            line turn = num.parse(line words[line at] as str);
+        }
+        spawnMechHere(line turn, line kind);
     } else if (line cmd == "clearmechs") {
         clearMechs();
         default.sendMessage(s"<gray>Mechs removed.");
@@ -45,7 +57,7 @@ playerevent command {
     } else if (line cmd == "pack") {
         packSend();
     } else {
-        default.sendMessage(s"<gray>Commands: <yellow>@mech [turn]</yellow>, <yellow>@walk [m/s] [turn]</yellow>, <yellow>@turn [deg/s]</yellow>, <yellow>@stop</yellow>, <yellow>@follow</yellow>, <yellow>@board</yellow>, <yellow>@exit</yellow> (or F), <yellow>@pose JOINT DEGREES</yellow>, <yellow>@pose reset</yellow>, <yellow>@status</yellow>, <yellow>@damage PART AMOUNT</yellow>, <yellow>@repair</yellow>, <yellow>@clearmechs</yellow>, <yellow>@pack</yellow>");
+        default.sendMessage(s"<gray>Commands: <yellow>@mech [walker|sprinter] [turn]</yellow>, <yellow>@walk [m/s] [turn]</yellow>, <yellow>@turn [deg/s]</yellow>, <yellow>@stop</yellow>, <yellow>@follow</yellow>, <yellow>@board</yellow>, <yellow>@exit</yellow> (or F), <yellow>@pose JOINT DEGREES</yellow>, <yellow>@pose reset</yellow>, <yellow>@status</yellow>, <yellow>@damage PART AMOUNT</yellow>, <yellow>@repair</yellow>, <yellow>@clearmechs</yellow>, <yellow>@pack</yellow>");
     }
 }
 
@@ -62,14 +74,14 @@ function poseCommand(words: list) {
         return;
     }
     if (words.len() < 3) {
-        line names = mechJointNames();
+        line names = mechJointNames(line m);
         default.sendMessage(s"<gray>Usage: <yellow>@pose JOINT DEGREES</yellow> or <yellow>@pose reset</yellow>. Joints:<white>%var(names)");
         return;
     }
     line name = words[2] as str;
     line a = mechPose(line m, line name, num.parse(words[3] as str));
     if (line a == -999) {
-        line names = mechJointNames();
+        line names = mechJointNames(line m);
         default.sendMessage(s"<red>No joint %var(name).</red> <gray>Joints:<white>%var(names)");
         return;
     }
@@ -84,6 +96,7 @@ function driveCommand(cmd: str, words: list) {
         default.sendMessage(s"<gray>No mech here. <yellow>@mech</yellow> spawns one.");
         return;
     }
+    useMech(line m);
     if (cmd == "follow") {
         if (gaitFollowToggle(line m) == 1) {
             default.sendMessage(s"<gray>Mech %var(m) is following you. <yellow>@follow</yellow> again or <yellow>@stop</yellow> to stop.");
