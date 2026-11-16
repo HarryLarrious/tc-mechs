@@ -33,7 +33,9 @@
 // * Parked: without a pilot and with nothing to do it stops, then goes down
 //   on one knee (the legs blend into mechKneelPose, the body drops
 //   gKneelDrop); it stands up again to walk. Boarding and getting out
-//   (pilot.tc) kneel it too, and open its hatch.
+//   (pilot.tc) kneel it too, open its hatch, and turn its torso to face
+//   ahead; if its probes keep the torso from turning for a second then, it
+//   turns anyway.
 //
 // Sizes in meters (mechGait is at real size), angles in degrees.
 
@@ -56,6 +58,8 @@ declare global gDip: list[num];
 declare global gIdle: list[num];
 /** Per mech: the impact speed (m/s) of its last landing, for the damage model. */
 declare global gImpact: list[num];
+/** Per mech: ticks the torso has been kept from turning by its probes. */
+declare global gAimStuck: list[num];
 /** Per mech: how far it is down on one knee (0 standing, 1 kneeling) and
  * where that goes (1 when parked: no pilot and nothing to do, or while the
  * pilot boards or gets out). */
@@ -281,6 +285,7 @@ function gaitInit(m: num) {
     global gDip.append(0);
     global gIdle.append(0);
     global gImpact.append(0);
+    global gAimStuck.append(0);
     global gSpeed.append(0);
     global gTurn.append(0);
     global gWantSpeed.append(0);
@@ -320,6 +325,7 @@ function gaitClear {
     global gDip = [];
     global gIdle = [];
     global gImpact = [];
+    global gAimStuck = [];
     global gFeet = [];
     global gSwT = [];
     global gSwA = [];
@@ -743,7 +749,10 @@ function gaitTick(m: num) {
     global gTurn[m] = line turn;
     line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
 
-    // torso: toward its aim at gAimRate, unless its probes would hit
+    // torso: toward its aim at gAimRate, unless its probes would hit. While
+    // a pilot gets in or out it has to come round to face ahead: kept from
+    // turning for more than a second then, it turns anyway (kneeling puts
+    // the torso low, where terrain can block it)
     line step = global gAimRate * line dt;
     if (line piloted == 1) {
         line step = global gPilotAimRate * line dt;
@@ -753,7 +762,15 @@ function gaitTick(m: num) {
     if (line aim2 != line aim) {
         if (probesClear(line pos.x, line pos.z, line yaw, line aim2, line pos.y + line bodyY) == 1) {
             line aim = line aim2;
+            global gAimStuck[m] = 0;
+        } else {
+            global gAimStuck[m] += 1;
+            if (global mBoard[m] != 0 && global gAimStuck[m] > 20) {
+                line aim = line aim2;
+            }
         }
+    } else {
+        global gAimStuck[m] = 0;
     }
     global gAim[m] = line aim;
 

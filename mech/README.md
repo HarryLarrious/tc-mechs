@@ -338,6 +338,11 @@ guard, spring off it and land hard on the ground in front of the mech, then
 stand up. Your real
 body comes back there, and the mech stays parked.
 
+Before either climb, the turret swings round to face ahead. Its collision
+probes normally stop it turning into blocks. While a pilot gets in or out,
+if they keep it from turning for more than a second, it turns anyway, so
+getting out can't hang on a turret left looking sideways.
+
 Both animations are in `mech/animations/` (`board.json`, `exit.json`) and
 can be opened in the animation editor. They are made to feel heavy: jumps
 and falls follow ballistic arcs (22 m/s² gravity), landings sink and
