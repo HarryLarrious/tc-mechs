@@ -63,11 +63,11 @@ The sprinter is an agile type (`agile` in its gait):
 - The turret faces ahead with the body. The guns still turn on their own
   mounts toward the aim. Only while it kneels does the turret turn by itself.
 - Shift kneels or stands up.
-- Space starts charging a jump: the body sinks into the legs as the charge
-  builds over 1.2 s. Space again jumps at 6.5 to 11.5 m/s up, carrying the
-  mech's speed plus a little more forward. At full charge it jumps on its own
-  after a second. Damaged legs jump lower. A jump flies as a fall, carries on
-  until something is in the way, and lands running.
+- Space jumps at 11.5 m/s up (4.4 m), carrying the mech's speed plus a
+  little more forward. Then it pressurizes again for 3 s (`jump_cooldown`),
+  counted in the air too, with a hiss when it is ready. Space while it
+  pressurizes only sputters. Damaged legs jump lower. A jump flies as a fall,
+  carries on until something is in the way, and lands running.
 
 ## Getting in and out
 

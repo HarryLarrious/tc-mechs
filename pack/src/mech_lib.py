@@ -72,12 +72,11 @@ GAIT = {
     "kneel_time": 1.5,   # seconds to kneel or stand up
     # piloting: an agile mech (1) steers where its pilot looks, strafes on A/D,
     # kneels on Shift (its turret only turns on its own while kneeling) and
-    # jumps on Space (charged); the walker turns on A/D
+    # jumps on Space, then pressurizes again; the walker turns on A/D
     "agile": 0.0,
-    "strafe": 0.0,       # strafing speed, a share of max_speed
-    "jump_min": 0.0,     # m/s (real) straight up, for a jump with no charge and a full one
-    "jump_max": 0.0,
-    "charge_time": 1.0,  # seconds to a full charge
+    "strafe": 0.0,         # strafing speed, a share of max_speed
+    "jump_speed": 0.0,     # m/s (real) straight up
+    "jump_cooldown": 0.0,  # seconds to pressurize again after a jump
 }
 KNEEL_POSE = {"hip_l": 41.0, "knee_l": 47.0, "ankle_l": -1.0, "hip_r": -102.0, "knee_r": 64.0, "ankle_r": 38.0}
 GAIT_LENGTHS = ("crouch", "lift", "bob", "step", "settle", "max_speed", "accel", "max_rise", "probe_up",

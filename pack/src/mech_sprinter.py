@@ -832,9 +832,8 @@ GAIT.update({
     "kneel_time": 1.1,
     "agile": 1.0,        # steers where the pilot looks, strafes, kneels on Shift, jumps on Space
     "strafe": 0.55,
-    "jump_min": 6.5,     # 1.4 m up...
-    "jump_max": 11.5,    # ...to 4.4 m, landing under the 12 m/s that hurts
-    "charge_time": 1.2,
+    "jump_speed": 11.5,  # 4.4 m up, landing under the 12 m/s that hurts
+    "jump_cooldown": 3.0,
 })
 KNEEL_POSE = {"hip_l": 49.0, "knee_l": 35.0, "ankle_l": 19.6, "hip_r": -102.0, "knee_r": 57.8, "ankle_r": 44.2}  # solved offline
 

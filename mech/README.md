@@ -226,23 +226,27 @@ foot slides sideways a little until it steps.
 ### Blocks
 
 The walk reads the blocks around it (`tc/terrain.tc`). There is no ground
-smoothing, as there is for the rally car's wheels. A walking foot plants flat
-on whatever block tops are under it.
+smoothing, as there is for the rally car's wheels.
 
-- **Footholds:** the ground under a foot is the highest block top under its
-  heel, middle, toe and both sides. It is found by a raycast down from 3.7 m
-  above the foot to 3.2 m below it, cached per column for two seconds. A
-  block at the top of that reach is a wall, not ground. The middle of the
-  foot must be on the top too, so a foot never perches on an edge by its heel
-  or toe.
+- **Footholds:** a foot stands on one block: the block top under its middle.
+  It is found by a raycast down from 3.7 m above the foot to 3.2 m below it,
+  cached per column for two seconds. A block at the top of that reach is a
+  wall, not ground. Only that block decides whether a foot can stand there
+  and whether it still has its ground, so the blocks around it cannot trip
+  it up.
+- **Tilt:** a planted foot tilts to the slope between the block tops under
+  its heel and toe (each taken within 1 m of the foot's height, at most 30°).
+  The tilt only changes how the foot looks.
 - **Choosing a step:** the foot tries the planned landing spot, then longer
   steps, then shorter ones. A longer step gets the whole foot onto a step,
   and it brings the trailing foot up a tall step that the body is waiting
-  at. It takes the first spot that meets every test:
+  at. It takes the first spot that meets every test, preferring a spot where
+  the toe is not jammed against a block more than half a block higher (that
+  makes a foot at the base of a tall step go up onto it):
   - it has ground,
   - it is within 3.2 m (three blocks) above or below the other foot,
-  - the foot's sweep from heel to toe crosses nothing higher than both ends,
-    checked every half block,
+  - the ground under the foot's middle along its way is nothing higher than
+    both ends, checked every half block,
   - the leg can reach it at some body height between the two feet, with
     every joint at least 1° inside its range and the leg under 97% of its
     length.

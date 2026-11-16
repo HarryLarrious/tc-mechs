@@ -9,7 +9,7 @@ function mechTypeNames(): list {
 /** Changes whenever any of the data below changes, so parsed copies of it
  * (which outlive a code update) are thrown away. */
 function mechDataStamp(): str {
-    return "4a42a1b1042d";
+    return "cac2c3e39b81";
 }
 
 // The current type's data (global curType; mech.tc's useType sets it).
@@ -322,7 +322,7 @@ function walkerScale(): num {
 }
 
 function walkerGait(): dict {
-    return {crouch: 0.42, swing: 0.6, lift: 0.525, bob: 0.105, step: 0.63, settle: 0.126, lead: 0.5, max_speed: 3.78, accel: 1.68, max_turn: 40, turn_accel: 80, aim_rate: 30, pilot_aim_rate: 60, toe: 12, max_rise: 3.192, probe_up: 3.696, probe_down: 3.15, climb_rate: 2.1, foot_heel: -0.609, foot_mid: 0.693, foot_toe: 1.995, foot_side: 0.504, margin: 1, max_reach: 0.97, gravity: 15, max_fall: 40, land_dip: 0.315, dip_rate: 1.05, fall_drift: 4.2, kneel_drop: 3.299, kneel_time: 1.5, agile: 0, strafe: 0, jump_min: 0, jump_max: 0, charge_time: 1};
+    return {crouch: 0.42, swing: 0.6, lift: 0.525, bob: 0.105, step: 0.63, settle: 0.126, lead: 0.5, max_speed: 3.78, accel: 1.68, max_turn: 40, turn_accel: 80, aim_rate: 30, pilot_aim_rate: 60, toe: 12, max_rise: 3.192, probe_up: 3.696, probe_down: 3.15, climb_rate: 2.1, foot_heel: -0.609, foot_mid: 0.693, foot_toe: 1.995, foot_side: 0.504, margin: 1, max_reach: 0.97, gravity: 15, max_fall: 40, land_dip: 0.315, dip_rate: 1.05, fall_drift: 4.2, kneel_drop: 3.299, kneel_time: 1.5, agile: 0, strafe: 0, jump_speed: 0, jump_cooldown: 0};
 }
 
 function walkerProbes(): list {
@@ -554,7 +554,7 @@ function sprinterScale(): num {
 }
 
 function sprinterGait(): dict {
-    return {crouch: 0.36, swing: 0.42, lift: 0.51, bob: 0.12, step: 0.51, settle: 0.09, lead: 0.55, max_speed: 6.3, accel: 3.3, max_turn: 65, turn_accel: 150, aim_rate: 45, pilot_aim_rate: 80, toe: 22, max_rise: 2.1, probe_up: 2.4, probe_down: 2.175, climb_rate: 2.4, foot_heel: -0.39, foot_mid: 0.63, foot_toe: 1.83, foot_side: 0.18, margin: 1, max_reach: 0.97, gravity: 15, max_fall: 40, land_dip: 0.27, dip_rate: 1.05, fall_drift: 4.5, kneel_drop: 2.595, kneel_time: 1.1, agile: 1, strafe: 0.55, jump_min: 6.5, jump_max: 11.5, charge_time: 1.2};
+    return {crouch: 0.36, swing: 0.42, lift: 0.51, bob: 0.12, step: 0.51, settle: 0.09, lead: 0.55, max_speed: 6.3, accel: 3.3, max_turn: 65, turn_accel: 150, aim_rate: 45, pilot_aim_rate: 80, toe: 22, max_rise: 2.1, probe_up: 2.4, probe_down: 2.175, climb_rate: 2.4, foot_heel: -0.39, foot_mid: 0.63, foot_toe: 1.83, foot_side: 0.18, margin: 1, max_reach: 0.97, gravity: 15, max_fall: 40, land_dip: 0.27, dip_rate: 1.05, fall_drift: 4.5, kneel_drop: 2.595, kneel_time: 1.1, agile: 1, strafe: 0.55, jump_speed: 11.5, jump_cooldown: 3};
 }
 
 function sprinterProbes(): list {

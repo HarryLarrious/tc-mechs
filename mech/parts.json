@@ -52,9 +52,8 @@
   "kneel_time": 1.5,
   "agile": 0.0,
   "strafe": 0.0,
-  "jump_min": 0.0,
-  "jump_max": 0.0,
-  "charge_time": 1.0
+  "jump_speed": 0.0,
+  "jump_cooldown": 0.0
  },
  "kneel_pose": {
   "hip_l": 41.0,

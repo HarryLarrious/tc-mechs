@@ -97,6 +97,6 @@ In game (play mode). Joining sets your third-person camera 15 blocks back (the `
 | A/D | Strafes left or right |
 | Look | Steers: the body turns toward where you look, with the turret facing ahead, and the guns turn on their own mounts to aim |
 | Shift | Kneels, or stands up again. While it kneels, the turret turns freely toward where you look |
-| Space | Starts charging a jump: the mech sinks into its legs. Press Space again to jump. The longer the charge, the higher the jump (1.4 m to 4.4 m). At full charge it jumps on its own after a second. DiamondFire only reports when you press Space, not when you let go, so the jump is two presses |
+| Space | Jumps 4.4 m up, carrying its speed. Then it pressurizes again for 3 seconds before the next jump (the action bar shows PRESSURIZING, then JUMP READY) |
 | Right click (hold), left click, Q, F | Cannons, roof machine gun, roof camera, get out (as in the walker) |
 

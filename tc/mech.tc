@@ -139,7 +139,7 @@ function saveType(): dict {
     line n = [global gL1, global gL2, global gT0a, global gPhi0, global gBend, global gCrouch, global gSwing, global gLift, global gBob, global gStep,
               global gSettle, global gLead, global gMaxSpeed, global gAccel, global gMaxTurn, global gTurnAccel, global gAimRate, global gToe, global gMaxRise, global gUp,
               global gDown, global gClimb, global gMargin, global gMaxReach, global gGravity, global gMaxFall, global gLandDip, global gDipRate, global gFallDrift, global gPilotAimRate,
-              global gKneelDrop, global gKneelTime, global gAgile, global gStrafe, global gJumpMin, global gJumpMax, global gChargeTime];
+              global gKneelDrop, global gKneelTime, global gAgile, global gStrafe, global gJumpSpeed, global gJumpCool];
     line d["n"] = line n;
     return line d;
 }
@@ -196,9 +196,8 @@ function restoreType(d: dict) {
     global gKneelTime = line n[32];
     global gAgile = line n[33];
     global gStrafe = line n[34];
-    global gJumpMin = line n[35];
-    global gJumpMax = line n[36];
-    global gChargeTime = line n[37];
+    global gJumpSpeed = line n[35];
+    global gJumpCool = line n[36];
 }
 
 /** The type numbered by its name ("walker", "sprinter"), or 0. */

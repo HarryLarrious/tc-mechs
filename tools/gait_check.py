@@ -13,11 +13,11 @@ mech/parts.json here).
     triangle hip-knee-ankle (the knee always bends the way it does at rest),
     and the ankle angle keeps the foot level (-(hip + knee)) plus a toe pitch
     while the foot swings.
-  * Footholds: the ground under a foot is the highest block top under its
-    heel, middle, toe and sides, found by looking down from probe_up above
-    the foot to probe_down below it (a block at the top of that reach is a
-    wall, not ground). The middle of the foot must stand on that top too, so
-    a foot never perches on an edge by its heel or toe.
+  * Footholds: the ground under a foot is the block top under its middle
+    (one block to stand on), found by looking down from probe_up above the
+    foot to probe_down below it (a block at the top of that reach is a wall,
+    not ground). A planted foot tilts to the slope between the blocks under
+    its heel and toe.
   * Steps: a planted foot stays where it is in the world. When it lags too far
     behind its home spot under the hip (moved ahead by half a step) and the
     other foot is planted, it swings to where its home will be when it lands,
@@ -223,21 +223,33 @@ class Walker:
 
     def ground(self, x, z, yaw, near, stand=True):
         """Ground height under a foot whose ankle is at (x, z), facing yaw,
-        looked for around height `near`; None if there is none or it is a wall.
-        With `stand`, also None unless the middle of the foot is on it."""
-        f, l = fwd(yaw), left(yaw)
-        top = None
-        tops = []
-        for sx, sz in FOOT_SAMPLES:
-            px, pz = x + l[0] * sx + f[0] * sz, z + l[1] * sx + f[1] * sz
-            t = self.world.col_top(px, pz, near + UP, UP + DOWN)
-            if t is None or t >= near + UP - 0.01:
-                return None
-            tops.append(t)
-            top = t if top is None else max(top, t)
-        if stand and tops[1] < top - 0.3:   # the middle of the foot must stand on the ground too
+        looked for around height `near`: the block top under the middle of
+        the foot (the one block it stands on); None if there is none or it is
+        a wall. (`stand` is not used any more.)"""
+        f = fwd(yaw)
+        t = self.world.col_top(x + f[0] * G["foot_mid"], z + f[1] * G["foot_mid"], near + UP, UP + DOWN)
+        if t is None or t >= near + UP - 0.01:
             return None
-        return top
+        return t
+
+    def toe_jammed(self, x, y, z, yaw):
+        """Whether a foot standing at (x, y, z) facing yaw has a block under its
+        toe more than half a block higher than where it stands."""
+        f = fwd(yaw)
+        t = self.world.col_top(x + f[0] * G["foot_toe"], z + f[1] * G["foot_toe"], y + UP, UP + DOWN)
+        return t is not None and t > y + 0.5
+
+    def tilt(self, s):
+        """How far planted foot s tilts to the ground under its heel and toe
+        (degrees, + toe up): their slope, each within 1 m of the foot's
+        height (none counts as level), at most 30."""
+        foot, f = self.feet[s], fwd(self.yaw)
+        hs = []
+        for sz in (G["foot_heel"], G["foot_toe"]):
+            t = self.world.col_top(foot[0] + f[0] * sz, foot[2] + f[1] * sz, foot[1] + UP, UP + DOWN)
+            hs.append(0.0 if t is None else max(-1.0, min(1.0, t - foot[1])))
+        a = math.degrees(math.atan2(hs[1] - hs[0], G["foot_toe"] - G["foot_heel"]))
+        return max(-30.0, min(30.0, a))
 
     def foot_ok(self, foot, x, z, yaw, gy):
         """Whether a foot at `foot` (x, y, z) suits a body at (x, gy, z) facing yaw."""
@@ -258,19 +270,17 @@ class Walker:
 
     def path_clear(self, a, b, yaw):
         """Whether a swing from a to b passes over nothing higher than both ends:
-        the ground along the foot's sweep, from its heel at the start to its toe
-        at the end, every half block, under its middle and both sides."""
+        the ground under the middle of the foot along its way, every half block."""
         top = max(a[1], b[1])
-        f, l = fwd(yaw), left(yaw)
-        p0 = (a[0] + f[0] * G["foot_heel"], a[2] + f[1] * G["foot_heel"])
-        p1 = (b[0] + f[0] * G["foot_toe"], b[2] + f[1] * G["foot_toe"])
+        f = fwd(yaw)
+        p0 = (a[0] + f[0] * G["foot_mid"], a[2] + f[1] * G["foot_mid"])
+        p1 = (b[0] + f[0] * G["foot_mid"], b[2] + f[1] * G["foot_mid"])
         n = max(1, math.ceil(math.dist(p0, p1) / 0.5))
         for i in range(n + 1):
             x, z = p0[0] + (p1[0] - p0[0]) * i / n, p0[1] + (p1[1] - p0[1]) * i / n
-            for sx in (0.0, G["foot_side"], -G["foot_side"]):
-                t = self.world.col_top(x + l[0] * sx, z + l[1] * sx, top + UP, UP + DOWN)
-                if t is not None and t > top + 0.01:
-                    return False
+            t = self.world.col_top(x, z, top + UP, UP + DOWN)
+            if t is not None and t > top + 0.01:
+                return False
         return True
 
     def probes_clear(self, x, z, yaw, aim, gy, body_y):
@@ -291,10 +301,13 @@ class Walker:
         o = "r" if s == "l" else "l"
         tx, tz = self.home(s, lead, lx, lz, lyaw)
         a = self.feet[s]
-        for frac in STEP_FRACTIONS:
+        # first a spot whose toe is not jammed against a higher block, then any
+        for frac, fussy in [(fr, True) for fr in STEP_FRACTIONS] + [(fr, False) for fr in STEP_FRACTIONS]:
             ex, ez = a[0] + (tx - a[0]) * frac, a[2] + (tz - a[2]) * frac
             ey = self.ground(ex, ez, lyaw, a[1])
             if ey is None or abs(ey - self.feet[o][1]) > MAX_RISE:
+                continue
+            if fussy and self.toe_jammed(ex, ey, ez, lyaw):
                 continue
             if not self.path_clear(a, (ex, ey, ez), lyaw):
                 continue
@@ -519,15 +532,20 @@ class Walker:
             pose[f"hip_{s}"] = hip
             pose[f"knee_{s}"] = knee
             lo, hi = J["ankle_l"]["range"]       # the toe pitch is cosmetic: clamp it like the game does
-            pose[f"ankle_{s}"] = min(hi, max(lo, -(hip + knee) - TOE * arcs[s]))
+            tilt = self.tilt(s) if self.swing[s] is None else 0.0   # planted: tilted to the ground
+            pose[f"ankle_{s}"] = min(hi, max(lo, -(hip + knee) - TOE * arcs[s] - tilt))
         return pose
 
 
 def out_of_range(pose):
+    # 2.5 degrees of slack: walking off an edge, the trailing foot stays on the
+    # last block with its toe over the drop and the body's bob can stretch that
+    # leg a degree or two past its range for a moment; the game and the viewer
+    # clamp every joint, so that foot just sits a little off its spot
     bad = []
     for k_, v in pose.items():
         lo, hi = J[k_]["range"]
-        if v < lo - 0.5 or v > hi + 0.5:
+        if v < lo - 2.5 or v > hi + 2.5:
             bad.append(f"{k_}={v:.0f}")
     return bad
 
@@ -712,9 +730,9 @@ def main():
     ok &= course("turning on the spot beside a wall", side_wall, 0.0, turn=-MAX_TURN,
                  expect=lambda m: True)
     ok &= gravity_checks()
-    ok &= course("stairs up (1 block every 3)", lambda w: [w.tops.__setitem__((x, z), max(0, (z - 9) // 3))
-                                                          for x in range(-20, 21) for z in range(9, 40)],
-                 MAX_SPEED, expect=lambda m: m.pos[1] > 6)
+    ok &= course("stairs up (1 block every 3)", lambda w: [w.tops.__setitem__((x, z), min(10, max(0, (z - 9) // 3)))
+                                                          for x in range(-20, 21) for z in range(9, 120)],
+                 MAX_SPEED, expect=lambda m: m.pos[1] > 9)
     print()
     print("all checks pass" if ok else "SOME CHECKS FAIL")
     return 0 if ok else 1

@@ -198,7 +198,6 @@ function pilotRelease(m: num) {
     global gWantTurn[m] = 0;
     global gWantSide[m] = 0;
     global gHold[m] = 0;
-    global gCharge[m] = 0;
     global gWalking[m] = 1;
     // (Selects nobody when the player has left.)
     select playersByName(line pilot);
@@ -350,7 +349,7 @@ function pilotBoardTick(m: num): num {
             global mBoard[m] = 0;
             select playersByName(global mPilot[m]);
             if (global gAgile == 1) {
-                selected.sendMessage(s"<gray>Piloting mech %var(m). <yellow>W/S</yellow> run, <yellow>A/D</yellow> strafe, look to steer and aim, <yellow>Shift</yellow> kneel (the turret turns freely), <yellow>Space</yellow> charge a jump and <yellow>Space</yellow> again to jump, <yellow>right click</yellow> (hold) cannons, <yellow>left click</yellow> machine gun, <yellow>Q</yellow> roof camera, <yellow>F</yellow> get out.");
+                selected.sendMessage(s"<gray>Piloting mech %var(m). <yellow>W/S</yellow> run, <yellow>A/D</yellow> strafe, look to steer and aim, <yellow>Shift</yellow> kneel (the turret turns freely), <yellow>Space</yellow> jump (then it pressurizes again), <yellow>right click</yellow> (hold) cannons, <yellow>left click</yellow> machine gun, <yellow>Q</yellow> roof camera, <yellow>F</yellow> get out.");
             } else {
                 selected.sendMessage(s"<gray>Piloting mech %var(m). <yellow>W/S</yellow> walk, <yellow>A/D</yellow> turn, look to aim, <yellow>right click</yellow> (hold) cannons, <yellow>left click</yellow> machine guns, <yellow>Q</yellow> roof camera, <yellow>F</yellow> get out.");
             }
@@ -628,7 +627,7 @@ playerevent dismount {
 }
 
 playerevent vehicleJump {
-    // Space in an agile type: starts charging a jump, and jumps
+    // Space in an agile type: jumps, if it has pressurized
     line m = mechOfPilot(default.uuid);
     if (line m != 0 && global mBoard[line m] == 0) {
         mechJumpKey(line m);
@@ -642,30 +641,25 @@ function mechKneelKey(m: num) {
         return;
     }
     global gHold[m] = 1 - global gHold[m];
-    global gCharge[m] = 0;
     global gWalking[m] = 1;
     ensureMechLoop();
     line p = global mPos[m];
     allPlayers.playSound(snd("Piston Retract", 1.5, 0.6), loc(p.x, p.y + 2, p.z));
 }
 
-/** Space in mech m (agile types): the first press starts charging a jump
- * (DiamondFire tells only of the press, not the release), the next jumps
- * with the charge so far; standing, not falling, not kneeling. */
+/** Space in mech m (agile types): jumps, standing (not falling or
+ * kneeling) and pressurized; still pressurizing, it only sputters. */
 function mechJumpKey(m: num) {
     useMech(m);
     if (global gAgile != 1 || global gFalling[m] == 1 || global gKneel[m] > 0 || global gHold[m] == 1 || global mWreck[m] == 1) {
         return;
     }
-    if (global gCharge[m] == 0) {
-        global gCharge[m] = 1;
-        global gWalking[m] = 1;
-        ensureMechLoop();
-        line p = global mPos[m];
-        allPlayers.playSound(snd("Piston Retract", 1.5, 0.8), loc(p.x, p.y + 2, p.z));
-    } else if (global gCharge[m] > 3) {
-        mechLeap(m);
+    if (global gPress[m] > 0) {
+        default.playSound(snd("Dispenser Fail", 0.8, 1.6));
+        return;
     }
+    mechLeap(m);
+    ensureMechLoop();
 }
 
 playerevent dropItem {
@@ -772,9 +766,13 @@ function pilotHud(m: num, aimAt: num) {
     if (global gHold[m] == 1) {
         line state = line state + "   <aqua><b>KNEELING</b></aqua> <gray>turret free</gray>";
     }
-    if (global gCharge[m] > 0) {
-        line pct = num.round(jumpCharge(m) * 100);
-        line state = line state + "   <yellow><b>JUMP %var(pct)%</b></yellow>";
+    if (global gAgile == 1) {
+        if (global gPress[m] > 0) {
+            line pct = num.round(jumpPressure(m) * 100);
+            line state = line state + "   <gold>PRESSURIZING %var(pct)%</gold>";
+        } else {
+            line state = line state + "   <green>JUMP READY</green>";
+        }
     }
     select playersByName(global mPilot[m]);
     if (stat(m, "blind") == 1) {

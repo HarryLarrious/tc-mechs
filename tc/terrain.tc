@@ -53,52 +53,67 @@ function colTop(x: num, z: num, from: num, len: num): num {
 }
 
 /** Ground height under a foot whose ankle point is at (x, z), facing yaw,
- * looked for from gUp above `near` to gDown below it: the highest block top
- * under its heel, middle, toe and sides. -999 if there is none, or it is a
- * wall (a block at the top of that reach), or (with stand 1) the middle of
- * the foot is not on it. */
+ * looked for from gUp above `near` to gDown below it: the block top under
+ * the middle of the foot (the one block it stands on; the rest of the foot
+ * tilts to the ground, footTilt). -999 if there is none, or it is a wall (a
+ * block at the top of that reach). (`stand` is not used any more.) */
 function groundUnder(x: num, z: num, yaw: num, near: num, stand: num = 1): num {
     line F = vec(0 - num.sin(yaw), 0, num.cos(yaw));
-    line L = vec(num.cos(yaw), 0, num.sin(yaw));
     line top0 = near + global gUp;
-    line top = -999;
-    line midTop = -999;
-    repeat (line i to 5) {
-        line s = global tFootSamples[line i];
-        line t = colTop(x + line L.x * line s.x + line F.x * line s.z, z + line L.z * line s.x + line F.z * line s.z, line top0, global gUp + global gDown);
-        if (line t < -900 || line t >= line top0 - 0.01) {
-            return -999;
-        }
-        line top = num.max(line top, line t);
-        if (line i == 2) {
-            line midTop = line t;
-        }
-    }
-    if (stand == 1 && line midTop < line top - 0.3) {
+    line mid = (global tFootSamples[2]).z;
+    line t = colTop(x + line F.x * line mid, z + line F.z * line mid, line top0, global gUp + global gDown);
+    if (line t < -900 || line t >= line top0 - 0.01) {
         return -999;
     }
-    return line top;
+    return line t;
+}
+
+/** 1 if a foot standing at (x, y, z) facing yaw has a block under its toe
+ * more than half a block higher than where it stands (a step prefers other
+ * spots). */
+function toeJammed(x: num, y: num, z: num, yaw: num): num {
+    line toe = (global tFootSamples[3]).z;
+    line t = colTop(x - num.sin(yaw) * line toe, z + num.cos(yaw) * line toe, y + global gUp, global gUp + global gDown);
+    if (line t > y + 0.5) {
+        return 1;
+    }
+    return 0;
+}
+
+/** How far a planted foot at `foot` (ankle x, ground height, z) facing yaw
+ * tilts to match the ground under its heel and toe (degrees, + toe up): the
+ * slope between those two block tops, each taken within 1 m of the foot's
+ * own height (none or a wall counts as level or 1 m up), at most 30. */
+function footTilt(foot: vec, yaw: num): num {
+    line F = vec(0 - num.sin(yaw), 0, num.cos(yaw));
+    line hs = [];
+    for (line k of [1, 3]) {
+        line sz = (global tFootSamples[line k as num]).z;
+        line t = colTop(foot.x + line F.x * line sz, foot.z + line F.z * line sz, foot.y + global gUp, global gUp + global gDown);
+        line h = 0;
+        if (line t > -900) {
+            line h = num.clamp(line t - foot.y, -1, 1);
+        }
+        line hs.append(line h);
+    }
+    line run = (global tFootSamples[3]).z - (global tFootSamples[1]).z;
+    return num.clamp(angYZ(line run, (line hs[2] as num) - (line hs[1] as num)), -30, 30);
 }
 
 /** 1 if a swing from a to b passes over nothing higher than both ends: the
- * ground along the foot's sweep, from its heel at the start to its toe at the
- * end, every half block, under its middle and both sides. */
+ * ground under the middle of the foot along its way, every half block. */
 function pathClear(a: vec, b: vec, yaw: num): num {
     line top = num.max(a.y, b.y);
     line F = vec(0 - num.sin(yaw), 0, num.cos(yaw));
-    line L = vec(num.cos(yaw), 0, num.sin(yaw));
-    line p0 = vec(a.x, 0, a.z) + line F * (global tFootSamples[1]).z;
-    line p1 = vec(b.x, 0, b.z) + line F * (global tFootSamples[3]).z;
-    line side = (global tFootSamples[4]).x;
+    line mid = (global tFootSamples[2]).z;
+    line p0 = vec(a.x, 0, a.z) + line F * line mid;
+    line p1 = vec(b.x, 0, b.z) + line F * line mid;
     line n = num.max(1, num.ceil((line p1 - line p0).len() / 0.5));
     repeat (line i to line n + 1) {
         line p = line p0 + (line p1 - line p0) * ((line i - 1) / line n);
-        for (line sx of [0, line side, 0 - line side]) {
-            line q = line p + line L * (line sx as num);
-            line t = colTop(line q.x, line q.z, line top + global gUp, global gUp + global gDown);
-            if (line t > line top + 0.01) {
-                return 0;
-            }
+        line t = colTop(line p.x, line p.z, line top + global gUp, global gUp + global gDown);
+        if (line t > line top + 0.01) {
+            return 0;
         }
     }
     return 1;

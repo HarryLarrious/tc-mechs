@@ -305,31 +305,33 @@ function footHome(side, lead, x = body.x, z = body.z, yaw = body.yaw) {
   return [x + l[0] * sx + f[0] * fz, z + l[1] * sx + f[1] * fz];
 }
 /** Ground under a foot with its ankle at (x, z), facing yaw, looked for near
- * height `near`; null for none, a wall, or (with stand) the middle unsupported. */
-function groundUnder(x, z, yaw, near, stand = true) {
-  const f = fwdOf(yaw), l = leftOf(yaw);
-  let top = -Infinity; const tops = [];
-  for (const [sx, sz] of FOOT_SAMPLES) {
-    const t = colTop(x + l[0] * sx + f[0] * sz, z + l[1] * sx + f[1] * sz, near + G.UP, G.UP + G.DOWN);
-    if (t === null || t >= near + G.UP - 0.01) return null;
-    tops.push(t); top = Math.max(top, t);
-  }
-  if (stand && tops[1] < top - 0.3) return null;
-  return top;
+ * height `near`: the block top under the foot's middle (the one block it
+ * stands on); null for none or a wall. */
+function groundUnder(x, z, yaw, near) {
+  const f = fwdOf(yaw);
+  const t = colTop(x + f[0] * g_.foot_mid, z + f[1] * g_.foot_mid, near + G.UP, G.UP + G.DOWN);
+  return t === null || t >= near + G.UP - 0.01 ? null : t;
+}
+/** How far a planted foot tilts to the ground under its heel and toe
+ * (degrees, + toe up): their slope, each within 1 m of the foot (none is
+ * level), at most 30. */
+function footTilt(foot, yaw) {
+  const f = fwdOf(yaw);
+  const h = [g_.foot_heel, g_.foot_toe].map(sz => {
+    const t = colTop(foot[0] + f[0] * sz, foot[2] + f[1] * sz, foot[1] + G.UP, G.UP + G.DOWN);
+    return t === null ? 0 : Math.max(-1, Math.min(1, t - foot[1]));
+  });
+  return Math.max(-30, Math.min(30, Math.atan2(h[1] - h[0], g_.foot_toe - g_.foot_heel) * 180 / Math.PI));
 }
 /** Whether a swing from a to b passes over nothing higher than both ends: the
- * ground along the foot's sweep (heel at the start to toe at the end, every
- * half block, middle and both sides). */
+ * ground under the foot's middle along its way, every half block. */
 function pathClear(a, b, yaw) {
-  const top = Math.max(a[1], b[1]), f = fwdOf(yaw), l = leftOf(yaw);
-  const p0 = [a[0] + f[0] * g_.foot_heel, a[2] + f[1] * g_.foot_heel], p1 = [b[0] + f[0] * g_.foot_toe, b[2] + f[1] * g_.foot_toe];
+  const top = Math.max(a[1], b[1]), f = fwdOf(yaw);
+  const p0 = [a[0] + f[0] * g_.foot_mid, a[2] + f[1] * g_.foot_mid], p1 = [b[0] + f[0] * g_.foot_mid, b[2] + f[1] * g_.foot_mid];
   const n = Math.max(1, Math.ceil(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) / 0.5));
   for (let i = 0; i <= n; i++) {
-    const x = p0[0] + (p1[0] - p0[0]) * i / n, z = p0[1] + (p1[1] - p0[1]) * i / n;
-    for (const sx of [0, g_.foot_side, -g_.foot_side]) {
-      const t = colTop(x + l[0] * sx, z + l[1] * sx, top + G.UP, G.UP + G.DOWN);
-      if (t !== null && t > top + 0.01) return false;
-    }
+    const t = colTop(p0[0] + (p1[0] - p0[0]) * i / n, p0[1] + (p1[1] - p0[1]) * i / n, top + G.UP, G.UP + G.DOWN);
+    if (t !== null && t > top + 0.01) return false;
   }
   return true;
 }
@@ -362,10 +364,15 @@ function gaitReset(y = 0) {
 function planStep(s, lead, lx, lz, lyaw, mayStepOff = true) {
   const o = s === "l" ? "r" : "l";
   const [tx, tz] = footHome(s, lead, lx, lz, lyaw), a = gait.feet[s], oy = gait.feet[o][1];
-  for (const frac of STEP_FRACTIONS) {
+  // first a spot whose toe is not jammed against a higher block, then any
+  for (const [frac, fussy] of [...STEP_FRACTIONS.map(f => [f, true]), ...STEP_FRACTIONS.map(f => [f, false])]) {
     const ex = a[0] + (tx - a[0]) * frac, ez = a[2] + (tz - a[2]) * frac;
     const ey = groundUnder(ex, ez, lyaw, a[1]);
     if (ey === null || Math.abs(ey - oy) > G.MAX_RISE) continue;
+    if (fussy) {
+      const f = fwdOf(lyaw), t = colTop(ex + f[0] * g_.foot_toe, ez + f[1] * g_.foot_toe, ey + G.UP, G.UP + G.DOWN);
+      if (t !== null && t > ey + 0.5) continue;
+    }
     const b = [ex, ey, ez], lo = Math.min(ey, oy), hi = Math.max(ey, oy);
     // the landing must suit some body height between the two feet
     if (pathClear(a, b, lyaw) && BODY_MIXES.some(k => footOk(b, lx, lz, lyaw, lo + (hi - lo) * k))) { gait.swing[s] = { t: 0, a: [...a], b }; return true; }
@@ -545,7 +552,8 @@ function legPoses(f, lift, arcs) {
     const clampJ = (j, v) => Math.max(spec.joints[j].range[0], Math.min(spec.joints[j].range[1], v));
     pose["hip_" + s] = clampJ("hip_" + s, hip);
     pose["knee_" + s] = clampJ("knee_" + s, knee);
-    pose["ankle_" + s] = clampJ("ankle_" + s, level.checked ? -(hip + knee) - G.TOE * arcs[s] : 0);
+    const tilt = gait.swing[s] ? 0 : footTilt(foot, body.yaw);   // planted: tilted to the ground
+    pose["ankle_" + s] = clampJ("ankle_" + s, level.checked ? -(hip + knee) - G.TOE * arcs[s] - tilt : 0);
   }
 }
 addEventListener("keydown", e => { if (e.target.tagName !== "INPUT" && e.target.tagName !== "SELECT") gait.keys[e.key.toLowerCase()] = true; });
