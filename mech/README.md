@@ -322,23 +322,36 @@ can now swing to -105°.
 1. Your pilot body appears where you stand and the real you is hidden. You
    sprint to the outboard side of the mech's front (right) leg while the mech
    kneels, turns its turret ahead, levels its guns and opens its hatch.
-2. You board in a hurry (3 s): crouch and leap to the head of the knee
-   piston, kick up onto it, vault onto the knee guard, spring up the torso
-   front and over the roof's edge, sprint along the roof outside the right
-   light gun, hop over the hatch, drop in feet first and dive into the chair.
+2. You board in a hurry, but with weight (8.5 s): sink into a crouch and
+   leap to the head of the knee piston, swing under it, kick up and haul
+   onto it, hop up onto the knee guard, jump to catch the roof's front edge
+   and roll over it, run along the roof outside the right light gun, brake
+   and step to the hatch, sit on its rim and lower yourself in, then slide
+   into the chair.
 3. The hatch shuts.
 4. The mech stands up, and you have the controls.
 
-Getting out (F or `@exit`) has its own animation (2.4 s): the mech kneels and
-opens up, and you push up out of the seat and spring out of the hatch,
-sprint along the roof, jump down onto the knee guard, leap off it and land
-crouched on the ground in front of the mech. Your real body comes back
-there, and the mech stays parked.
+Getting out (F or `@exit`) has its own animation (5.3 s): the mech kneels and
+opens up, and you lurch up out of the seat, press up through the hatch, get
+a foot on the rim and step out, run along the roof, jump down onto the knee
+guard, spring off it and land hard on the ground in front of the mech, then
+stand up. Your real
+body comes back there, and the mech stays parked.
 
 Both animations are in `mech/animations/` (`board.json`, `exit.json`) and
-can be opened in the animation editor. Their hands and feet float free of
-the body, like separate parts: each limb is placed by where it ends and
-which way it points, not held to its shoulder or hip.
+can be opened in the animation editor. They are made to feel heavy: jumps
+and falls follow ballistic arcs (22 m/s² gravity), landings sink and
+recover, the hang under the piston swings like a damped pendulum, and the
+run is a run cycle (contact, compression, push-off with the other knee
+driving up, flight) with the arms pumping, elbows bent.
+
+They are animated as a full character rig: two-bone arms (shoulder, elbow,
+wrist) and legs (hip, knee, ankle), each bone half a Minecraft limb (6 px).
+Only what six parts can show is kept: each arm part sits with its bottom at
+the wrist and its middle at the elbow, and its top lands wherever that line
+extends (on the shoulder when the arm hangs straight, away from it when the
+elbow bends). Each leg part does the same with the ankle and the knee.
+Knees always bend forward and elbows back and out.
 `pack/src/mech_pilot.py` bakes each into a timeline of 20 samples a second
 (every tick) in the mech frame with the mech kneeling. A sample is the
 body's hips, lean and facing, and per limb its joint, end and roll. The
