@@ -21,7 +21,7 @@ The first mech walks on two legs and carries a turret torso with two heavy side 
 | [tools/animator/](tools/animator/) | Animation editor: pose the pilot on the kneeling mech key by key, play it, save drafts |
 | [mech/animations/](mech/animations/) | The pilot's animations (getting in and getting out), baked into the game by `mech_pilot.py` |
 | [tools/build_pack.py](tools/build_pack.py) | Validates, zips and publishes the pack to the `pack-dist` branch, and points `tc/pack.tc` at it |
-| [tc/](tc/) | Terracotta code for the plot: spawning, drawing and posing mechs (`mech.tc`), the procedural walk (`gait.tc`) over blocks (`terrain.tc`), piloting (`pilot.tc`), firing (`weapons.tc`), commands, the pack; `mech_data.tc` is generated |
+| [tc/](tc/) | Terracotta code for the plot: spawning, drawing and posing mechs (`mech.tc`), the procedural walk (`gait.tc`) over blocks (`terrain.tc`), piloting (`pilot.tc`), firing (`weapons.tc`), damage (`damage.tc`), commands, the pack; `mech_data.tc` is generated |
 | [tools/gait_check.py](tools/gait_check.py) | The reference model of the procedural walk, with its checks (IK round trip, joint ranges at every speed and turn rate, test courses of steps, walls and drops) |
 
 ## Build the mech
@@ -74,6 +74,9 @@ In game (play mode). Joining sets your third-person camera 15 blocks back (the `
 | `@exit` | Gets out of the mech you pilot (same as F): it kneels, and you spring out of the hatch, sprint along the roof and jump down off its knee |
 | `@pose JOINT DEGREES` | Moves a joint on the nearest mech: `hip_l`, `knee_l`, `ankle_l`, `hip_r`, `knee_r`, `ankle_r`, `waist`, `elev_hl`, `elev_hr`, `elev_ll`, `elev_lr` |
 | `@pose reset` | Puts the nearest mech back in its rest pose |
+| `@status` | The nearest mech's damage: integrity, walking and turret speed, every damaged part |
+| `@damage PART AMOUNT` | Damages a part of the nearest mech (a test tool; `@damage all AMOUNT` for every part) |
+| `@repair` | Puts the nearest mech back together |
 | `@clearmechs` | Removes every mech |
 | `@pack` | Sends the resource pack again |
 

@@ -1,0 +1,740 @@
+// The damage model: every part of a mech has hit points (mechPartDamage).
+//
+// Hits: a round is tested against the hitboxes of every other mech's parts
+// (each an oriented box: the part's hitbox in its own frame, placed by the
+// matrix mechRender last gave its draw group). The nearest part along the ray
+// takes the damage; what it can't absorb goes on to the next part behind it.
+// Hard landings hurt the feet and legs.
+//
+// A part at half its hit points or less shows its damaged model (custom
+// model data string "damaged"). At 0 it breaks: a part that breaks off
+// ("detach": armor, guns, pistons, tanks) leaves the mech as tumbling debris
+// with every part mounted on it; any other part stays, damaged, and stops
+// doing its job.
+//
+// What the damage does (damageStatus, kept in mStat):
+// * Walking speed and turn rate: the hip, knee and ankle motors (scaled by
+//   the power pack's charge), the air pistons (which need the air tanks, the
+//   compressor helps), and the feet. A broken hip mount, thigh or shin loses
+//   the leg: the mech goes down on one knee and can't walk.
+// * Turret: the waist ring sets how fast it turns; broken, it stays put.
+// * Aim: damaged sensors and a cracked torso frame widen every gun's spread.
+// * Guns: a heavy cannon needs its gun and barrel cluster and ammo from the
+//   bustle (a damaged bustle jams the feed, bent barrels spread); a light gun
+//   needs its gun and mount, and jams when damaged.
+// * The cockpit: broken, the pilot's readout goes dark.
+// * The ammo bustle at 0 cooks off: an explosion that hurts the torso.
+// * The pelvis or torso frame at 0 wrecks the mech: it blows up, armor flies
+//   off, the pilot is thrown out, and nobody can board it until @repair.
+
+/** Parsed mechPartDamage: per part [group, hp, detach, damaged, parent, hitbox
+ * min, hitbox max, hitbox center, hitbox radius]; part index by id. */
+declare global mDmg: list;
+declare global mPartIdx: dict[num];
+declare global dmgLoaded: num;
+/** Per mech: each part's hit points, 1 once it broke, 1 while it shows its
+ * damaged model; what the damage does (see damageStatus); 1 once wrecked. */
+declare global mHp: list;
+declare global mBroke: list;
+declare global mShown: list;
+declare global mStat: list;
+declare global mWreck: list[num];
+/** Per mech: the matrix of each draw group as mechRender last set it
+ * ([x col, y col, z col, translation from the anchor]) and the anchor. */
+declare global mGroupW: list;
+declare global mAnchor: list[vec];
+/** Debris (parts broken off): display UUID, position, velocity, rotation
+ * columns, spin axis and rate (degrees per tick), ticks left. */
+declare global dbIds: list[str];
+declare global dbPos: list[vec];
+declare global dbVel: list[vec];
+declare global dbCols: list;
+declare global dbAxis: list[vec];
+declare global dbSpin: list[num];
+declare global dbT: list[num];
+
+/** Damage a round does to a mech part: heavy, light. */
+function heavyMechDamage(): num {
+    return 9;
+}
+
+function lightMechDamage(): num {
+    return 3;
+}
+
+/** Parses the damage data once per data version. */
+function loadDamage {
+    if (global dmgLoaded == mechDataVersion()) {
+        return;
+    }
+    loadMechData();
+    global mDmg = [];
+    global mPartIdx = {};
+    line i = 0;
+    for (line row of mechPartDamage()) {
+        line i += 1;
+        line w = (line row as str).split(" ");
+        line n = [];
+        repeat (line k to 6) {
+            line n.append(num.parse(line w[line k + 5] as str));
+        }
+        line lo = vec(line n[1] as num, line n[2] as num, line n[3] as num);
+        line hi = vec(line n[4] as num, line n[5] as num, line n[6] as num);
+        global mDmg.append([line w[1], num.parse(line w[2] as str), num.parse(line w[3] as str), num.parse(line w[4] as str),
+            num.parse(line w[5] as str), line lo, line hi, (line lo + line hi) * 0.5, (line hi - line lo).len() * 0.5]);
+        global mPartIdx[(global mPart[line i] as list)[1] as str] = line i;
+    }
+    global dmgLoaded = mechDataVersion();
+}
+
+/** Sets up the damage state of a newly spawned mech (every part whole). */
+function damageInit {
+    loadDamage();
+    line hp = [];
+    line z = [];
+    for (line d of global mDmg) {
+        line hp.append((line d as list)[2]);
+        line z.append(0);
+    }
+    global mHp.append(line hp);
+    global mBroke.append(line z);
+    global mShown.append(line z);
+    global mStat.append({});
+    global mWreck.append(0);
+    global mGroupW.append([]);
+    global mAnchor.append(vec(0, 0, 0));
+    damageStatus(global mechCount);
+}
+
+/** Empties the damage lists (with clearMechs), and removes the debris. */
+function damageClear {
+    global mHp = [];
+    global mBroke = [];
+    global mShown = [];
+    global mStat = [];
+    global mWreck = [];
+    global mGroupW = [];
+    global mAnchor = [];
+    removeDisplays(global dbIds);
+    global dbIds = [];
+    global dbPos = [];
+    global dbVel = [];
+    global dbCols = [];
+    global dbAxis = [];
+    global dbSpin = [];
+    global dbT = [];
+}
+
+/** Part `id` of mech m: its hit points as a fraction of full (0 if broken),
+ * and 1 if it broke. */
+function partFrac(m: num, id: str): num {
+    line i = global mPartIdx[id];
+    return ((global mHp[m] as list)[line i] as num) / ((global mDmg[line i] as list)[2] as num);
+}
+
+function partBroken(m: num, id: str): num {
+    return (global mBroke[m] as list)[global mPartIdx[id]] as num;
+}
+
+/** What mech m's damage does, from its parts (kept in mStat[m]):
+ * mob: walking speed and turn rate (0 to 1), legLost: 1 if a leg is gone,
+ * aim: how fast the turret turns (0 to 1), spread: added to every gun's
+ * spread, heavy_l/heavy_r/light_l/light_r: 1 if that gun can fire,
+ * jamH/jamL: the chance a round jams, spreadH: added to the heavy cannons'
+ * spread, blind: 1 if the cockpit is broken, integrity: the whole mech's
+ * hit points as a fraction of full. */
+function damageStatus(m: num) {
+    line st = {};
+    // walking: motors (powered by the pack), pistons (fed by the tanks)
+    line motors = 0;
+    for (line id of ["hip_motor_l", "hip_motor_r", "knee_motor_l", "knee_motor_r", "ankle_motor_l", "ankle_motor_r"]) {
+        line motors += partFrac(m, line id as str) / 6;
+    }
+    line power = 0.4 + 0.6 * partFrac(m, "power_pack");
+    line pistons = 0;
+    for (line j of ["hip", "knee", "ankle"]) {
+        for (line s of ["l", "r"]) {
+            if (partBroken(m, "%var(j)_piston_cyl_%var(s)") == 0 && partBroken(m, "%var(j)_piston_rod_%var(s)") == 0) {
+                line pistons += 1 / 6;
+            }
+        }
+    }
+    line air = (2 - partBroken(m, "air_tank_l") - partBroken(m, "air_tank_r")) / 2 * (0.7 + 0.3 * num.min(1, partFrac(m, "compressor") * 2));
+    line mob = 0.25 + 0.5 * line motors * line power + 0.25 * line pistons * line air;
+    for (line s of ["l", "r"]) {
+        if (partBroken(m, "foot_%var(s)") == 1) {
+            line mob = line mob * 0.6;
+        }
+    }
+    line legLost = 0;
+    for (line id of ["hip_mount_l", "hip_mount_r", "thigh_l", "thigh_r", "shin_l", "shin_r"]) {
+        if (partBroken(m, line id as str) == 1) {
+            line legLost = 1;
+        }
+    }
+    if (line legLost == 1) {
+        line mob = 0;
+    }
+    line st["mob"] = num.clamp(line mob, 0, 1);
+    line st["legLost"] = line legLost;
+    // turret and aim
+    line aim = 0;
+    if (partBroken(m, "waist_ring") == 0) {
+        line aim = 0.3 + 0.7 * partFrac(m, "waist_ring");
+    }
+    line st["aim"] = line aim;
+    line st["spread"] = (1 - partFrac(m, "sensors")) * 0.02 + (1 - partFrac(m, "torso_frame")) * 0.012;
+    // guns
+    line ammo = partFrac(m, "ammo_bustle");
+    for (line s of ["l", "r"]) {
+        line ok = 0;
+        if (partBroken(m, "heavy_gun_%var(s)") == 0 && partBroken(m, "heavy_barrels_%var(s)") == 0 && line ammo > 0) {
+            line ok = 1;
+        }
+        line st["heavy_%var(s)"] = line ok;
+        line ok = 0;
+        if (partBroken(m, "light_gun_%var(s)") == 0 && partBroken(m, "light_mount_%var(s)") == 0) {
+            line ok = 1;
+        }
+        line st["light_%var(s)"] = line ok;
+    }
+    line st["jamH"] = (1 - line ammo) * 0.5;
+    line st["jamL"] = (2 - partFrac(m, "light_gun_l") - partFrac(m, "light_gun_r")) * 0.2;
+    line st["spreadH"] = (2 - partFrac(m, "heavy_barrels_l") - partFrac(m, "heavy_barrels_r")) * 0.012;
+    line st["blind"] = partBroken(m, "cockpit");
+    line st["integrity"] = mechIntegrity(m);
+    global mStat[m] = line st;
+}
+
+/** mStat[m][key]. */
+function stat(m: num, key: str): num {
+    return (global mStat[m] as dict)[key] as num;
+}
+
+/** The whole mech's hit points as a fraction of full. */
+function mechIntegrity(m: num): num {
+    line have = 0;
+    line full = 0;
+    repeat (line i to global mDmg.len()) {
+        line have += (global mHp[m] as list)[line i] as num;
+        line full += (global mDmg[line i] as list)[2] as num;
+    }
+    return line have / line full;
+}
+
+/** The item part i of mech m shows: its model in the mech's colors, damaged
+ * (1) or not. */
+function partItem(m: num, i: num, damaged: num): item {
+    line p = global mPart[i] as list;
+    line it = item("stone").setModel(line p[2] as str).setModelDataNumbers(global mPaint[m], global mAccent[m], type="Colors");
+    if (damaged == 1) {
+        line it = line it.setModelDataStrings("damaged");
+    }
+    return line it;
+}
+
+/** Where part i of mech m is now (world): its hitbox's center. */
+function partCenter(m: num, i: num): vec {
+    line W = (global mGroupW[m] as list)[global mPartGroup[i]] as list;
+    line c = (global mDmg[i] as list)[8] as vec;
+    return global mAnchor[m] + (line W[4] as vec) + rotApply(line W, line c);
+}
+
+/** Does `amount` damage to part i of mech m, from direction `dir` (world,
+ * which way the hit pushes). Returns what the part could not absorb (it
+ * goes on to whatever is behind it). */
+function damagePart(m: num, i: num, amount: num, dir: vec): num {
+    line hps = global mHp[m] as list;
+    line hp = line hps[i] as num;
+    if (line hp <= 0) {
+        return amount;
+    }
+    line left = num.max(0, amount - line hp);
+    line hp = num.max(0, line hp - amount);
+    line hps[i] = line hp;
+    global mHp[m] = line hps;
+    line d = global mDmg[i] as list;
+    // damaged model at half
+    if (line hp <= (line d[2] as num) / 2 && line d[4] as num == 1 && (global mShown[m] as list)[i] as num == 0) {
+        line shown = global mShown[m] as list;
+        line shown[i] = 1;
+        global mShown[m] = line shown;
+        line id = (global mAll[m] as list)[i] as str;
+        if (line id != "") {
+            select entitiesByName(line id);
+            selectedEntity.setItemDisplayItem(partItem(m, i, 1));
+            select reset;
+        }
+    }
+    if (line hp <= 0) {
+        partBreaks(m, i, dir);
+    }
+    damageStatus(m);
+    return line left;
+}
+
+/** Part i of mech m has broken. */
+function partBreaks(m: num, i: num, dir: vec) {
+    line broke = global mBroke[m] as list;
+    if (line broke[i] as num == 1) {
+        return;
+    }
+    line broke[i] = 1;
+    global mBroke[m] = line broke;
+    line d = global mDmg[i] as list;
+    line id = (global mPart[i] as list)[1] as str;
+    line at = partCenter(m, i);
+    allPlayers.displayParticleEffect(par("Large Smoke"), loc(line at.x, line at.y, line at.z));
+    allPlayers.playSound(snd("Anvil Land", 1.2, 0.7), loc(line at.x, line at.y, line at.z));
+    if (line d[3] as num == 1) {
+        detachPart(m, i, dir);
+    }
+    if (line id == "ammo_bustle") {
+        cookOff(m);
+    }
+    if ((line id == "pelvis" || line id == "torso_frame") && global mWreck[m] == 0) {
+        wreckMech(m);
+    }
+}
+
+/** Part i of mech m breaks off, with every part mounted on it, as debris
+ * pushed along `dir`. */
+function detachPart(m: num, i: num, dir: vec) {
+    // the part and its descendants (mechPartDamage parents)
+    line take = [i];
+    line grew = 1;
+    while (line grew == 1) {
+        line grew = 0;
+        repeat (line j to global mDmg.len()) {
+            line up = (global mDmg[line j] as list)[5] as num;
+            if (line up != 0 && line take.find(line up) != 0 && line take.find(line j) == 0) {
+                line take.append(line j);
+                line grew = 1;
+            }
+        }
+    }
+    line all = global mAll[m] as list;
+    line gids = global mGroupIds[m] as list;
+    line broke = global mBroke[m] as list;
+    line hps = global mHp[m] as list;
+    for (line jj of line take) {
+        line j = line jj as num;
+        line uuid = line all[line j] as str;
+        line broke[line j] = 1;
+        line hps[line j] = 0;
+        if (line uuid != "") {
+            line all[line j] = "";
+            // out of its draw group
+            line g = global mPartGroup[line j];
+            line members = [];
+            for (line u of line gids[line g] as list) {
+                if (line u as str != line uuid) {
+                    line members.append(line u);
+                }
+            }
+            line gids[line g] = line members;
+            // into the debris, where it is now
+            line W = (global mGroupW[m] as list)[line g] as list;
+            line pos = global mAnchor[m] + (line W[4] as vec);
+            line v = dir * 3 + vec(num.randomd(-1.5, 1.5), num.randomd(2.5, 4.5), num.randomd(-1.5, 1.5));
+            debrisAdd(line uuid, line pos, line v, [line W[1], line W[2], line W[3]]);
+        }
+    }
+    global mAll[m] = line all;
+    global mGroupIds[m] = line gids;
+    global mBroke[m] = line broke;
+    global mHp[m] = line hps;
+}
+
+/** Adds a display to the debris: at `pos` (world) with rotation `cols`,
+ * flying off at `v` (m/s), tumbling. */
+function debrisAdd(uuid: str, pos: vec, v: vec, cols: list) {
+    if (global dbIds.len() >= 60) {
+        debrisRemove(1);
+    }
+    global dbIds.append(uuid);
+    global dbPos.append(pos);
+    global dbVel.append(v);
+    global dbCols.append(cols);
+    global dbAxis.append(vec(num.randomd(-1, 1), num.randomd(-1, 1), num.randomd(-1, 1)).setLength(1));
+    global dbSpin.append(num.randomd(8, 22));
+    global dbT.append(240);
+    select entitiesByName(uuid);
+    selectedEntity.teleport(loc(pos.x, pos.y, pos.z));
+    select reset;
+    debrisDraw(global dbIds.len());
+}
+
+/** Removes debris k. */
+function debrisRemove(k: num) {
+    select entitiesByName(global dbIds[k]);
+    selectedEntity.remove();
+    select reset;
+    global dbIds.remove(k);
+    global dbPos.remove(k);
+    global dbVel.remove(k);
+    global dbCols.remove(k);
+    global dbAxis.remove(k);
+    global dbSpin.remove(k);
+    global dbT.remove(k);
+}
+
+/** Sets debris k's display to its rotation (it stands at its position). */
+function debrisDraw(k: num) {
+    line c = global dbCols[k] as list;
+    line a = line c[1] as vec;
+    line b = line c[2] as vec;
+    line d = line c[3] as vec;
+    select entitiesByName(global dbIds[k]);
+    selectedEntity.setDisplayTransformationMatrix([line a.x, line b.x, line d.x, 0, line a.y, line b.y, line d.y, 0, line a.z, line b.z, line d.z, 0, 0, 0, 0, 1]);
+    selectedEntity.setDisplayInterpolation(1, 0);
+    select reset;
+}
+
+/** `v` turned by `deg` degrees about the unit axis `k`. */
+function rotateAbout(v: vec, k: vec, deg: num): vec {
+    line c = num.cos(deg);
+    line s = num.sin(deg);
+    return v * line c + k.cross(v) * line s + k * (k.dot(v) * (1 - line c));
+}
+
+/** Every tick (mechLoop): debris falls, tumbles, bounces off the ground,
+ * and goes after 12 seconds. */
+function debrisTick {
+    line k = global dbIds.len();
+    while (line k >= 1) {
+        global dbT[line k] -= 1;
+        if (global dbT[line k] <= 0) {
+            debrisRemove(line k);
+        } else {
+            line v = global dbVel[line k] - vec(0, 1, 0);
+            line p = global dbPos[line k] + line v * 0.05;
+            line ground = colTop(line p.x, line p.z, line p.y + 0.6, 12);
+            line spin = global dbSpin[line k];
+            if (line ground > -900 && line p.y <= line ground + 0.1) {
+                line p = vec(line p.x, line ground + 0.1, line p.z);
+                line bounce = 0;
+                if (line v.y < -2) {
+                    line bounce = 0 - line v.y * 0.3;
+                }
+                line v = vec(line v.x * 0.5, line bounce, line v.z * 0.5);
+                line spin = line spin * 0.5;
+            }
+            global dbVel[line k] = line v;
+            global dbPos[line k] = line p;
+            global dbSpin[line k] = line spin;
+            if (line spin > 0.3) {
+                line ax = global dbAxis[line k];
+                line c = global dbCols[line k] as list;
+                global dbCols[line k] = [rotateAbout(line c[1] as vec, line ax, line spin), rotateAbout(line c[2] as vec, line ax, line spin), rotateAbout(line c[3] as vec, line ax, line spin)];
+                debrisDraw(line k);
+            }
+            select entitiesByName(global dbIds[line k]);
+            selectedEntity.teleport(loc(line p.x, line p.y, line p.z));
+            select reset;
+        }
+        line k -= 1;
+    }
+}
+
+/** The ammo bustle cooks off: an explosion that hurts the torso parts near it
+ * (which may wreck the mech). */
+function cookOff(m: num) {
+    line at = partCenter(m, global mPartIdx["ammo_bustle"]);
+    allPlayers.displayParticleEffect(par("Explosion Emitter"), loc(line at.x, line at.y, line at.z));
+    allPlayers.playSound(snd("Explode", 3, 0.7), loc(line at.x, line at.y, line at.z));
+    line up = vec(0, 1, 0);
+    for (line hit of [["torso_frame", 90], ["torso_top", 80], ["antenna", 40], ["torso_side_l", 40], ["torso_side_r", 40], ["cockpit", 30]]) {
+        line h = line hit as list;
+        damagePart(m, global mPartIdx[line h[1] as str], line h[2] as num, line up);
+    }
+}
+
+/** Mech m is wrecked: it blows up, armor flies off, the pilot is thrown out,
+ * and it stays down until @repair. */
+function wreckMech(m: num) {
+    global mWreck[m] = 1;
+    line o = global mPos[m] + vec(0, 5, 0);
+    allPlayers.displayParticleEffect(par("Explosion Emitter"), loc(line o.x, line o.y, line o.z));
+    allPlayers.playSound(snd("Explode", 4, 0.6), loc(line o.x, line o.y, line o.z));
+    line pilot = global mPilot[m];
+    if (line pilot != "") {
+        pilotOut(m);
+        select playersByName(line pilot);
+        selected.damage(8);
+        selected.sendMessage(s"<red><b>Your mech was wrecked.</b></red> <gray>You were thrown clear.");
+        select reset;
+    }
+    // armor shakes loose
+    repeat (line i to global mDmg.len()) {
+        line d = global mDmg[line i] as list;
+        if (line d[1] as str == "armor" && line d[3] as num == 1 && (global mBroke[m] as list)[line i] as num == 0 && num.random(0, 1) == 1) {
+            line out = (partCenter(m, line i) - global mPos[m]) * vec(1, 0, 1);
+            line out = line out.setLength(1) + vec(0, 0.6, 0);
+            damagePart(m, line i, 9999, line out);
+        }
+    }
+    global gWantSpeed[m] = 0;
+    global gWantTurn[m] = 0;
+    global gFollow[m] = "";
+    global gWalking[m] = 1;
+}
+
+/** Mech m landed at `speed` m/s: a hard landing (over 12 m/s) hurts the feet
+ * and legs. */
+function damageLanding(m: num, speed: num) {
+    if (speed <= 12 || global mWreck[m] == 1) {
+        return;
+    }
+    line hurt = (speed - 12) * 22;
+    line down = vec(0, -1, 0);
+    for (line share of [["foot_armor", 0.3], ["foot", 0.25], ["shin_armor", 0.15], ["ankle_motor", 0.15], ["shin", 0.1], ["knee_motor", 0.1]]) {
+        line sh = line share as list;
+        for (line s of ["l", "r"]) {
+            line id = (line sh[1] as str) + "_" + (line s as str);
+            damagePart(m, global mPartIdx[line id], line hurt * (line sh[2] as num), line down);
+        }
+    }
+    damagePart(m, global mPartIdx["pelvis"], line hurt * 0.08, line down);
+    select playersByName(global mPilot[m]);
+    selected.sendActionBar(s"<red><b>HARD LANDING</b></red> <gray>%var(speed) m/s");
+    select reset;
+}
+
+/** Every half second (mechLoop): smoke from badly damaged parts still on the
+ * mech, and from a wreck. */
+function damageSmoke(m: num) {
+    if (global mWreck[m] == 1) {
+        line o = global mPos[m] + vec(num.randomd(-1.5, 1.5), 5.5, num.randomd(-1.5, 1.5));
+        allPlayers.displayParticleEffect(par("Campfire Signal Smoke"), loc(line o.x, line o.y, line o.z));
+    }
+    if ((global mGroupW[m] as list).len() == 0) {
+        return;
+    }
+    repeat (line i to global mDmg.len()) {
+        line d = global mDmg[line i] as list;
+        line hp = (global mHp[m] as list)[line i] as num;
+        if (line hp < (line d[2] as num) * 0.25 && (global mAll[m] as list)[line i] as str != "" && num.random(1, 3) == 1) {
+            line c = partCenter(m, line i);
+            allPlayers.displayParticleEffect(par("Large Smoke"), loc(line c.x, line c.y, line c.z));
+        }
+    }
+}
+
+/** A round from `from` along `dir` (unit, world) reaching `reach` m: the
+ * nearest part of a mech other than `own` it passes through. Returns
+ * [distance, mech, hits], hits being [distance, part] for every part on the
+ * ray, nearest first; [] if it hits none. */
+function mechRayHit(own: num, from: vec, dir: vec, reach: num): list {
+    loadDamage();
+    line best = [];
+    line bestD = reach;
+    repeat (line m to global mechCount) {
+        if (line m != own && global mGone[line m] == 0 && (global mGroupW[line m] as list).len() > 0) {
+            // the whole mech first: a sphere round it
+            line c = global mPos[line m] + vec(0, 5, 0);
+            line v = line c - from;
+            line tca = line v.dot(dir);
+            if (line tca > -9 && line v.dot(line v) - line tca * line tca < 81) {
+                line hits = mechPartsOnRay(line m, from, dir, line bestD);
+                if (line hits.len() > 0) {
+                    line d0 = (line hits[1] as list)[1] as num;
+                    if (line d0 < line bestD) {
+                        line bestD = line d0;
+                        line best = [line d0, line m, line hits];
+                    }
+                }
+            }
+        }
+    }
+    return line best;
+}
+
+/** Every part of mech m the ray from `from` along `dir` passes through
+ * within `reach` m: [distance in, part], nearest first. */
+function mechPartsOnRay(m: num, from: vec, dir: vec, reach: num): list {
+    line A = global mAnchor[m];
+    line gw = global mGroupW[m] as list;
+    line all = global mAll[m] as list;
+    line hits = [];
+    repeat (line i to global mDmg.len()) {
+        if (line all[line i] as str != "") {
+            line d = global mDmg[line i] as list;
+            line W = line gw[global mPartGroup[line i]] as list;
+            line T = line A + (line W[4] as vec);
+            // its bounding sphere
+            line c = line T + rotApply(line W, line d[8] as vec);
+            line r = line d[9] as num;
+            line v = line c - from;
+            line tca = line v.dot(dir);
+            if (line tca > 0 - line r && line tca < reach + line r && line v.dot(line v) - line tca * line tca <= line r * line r) {
+                // its box, in its own frame (slabs)
+                line o = from - line T;
+                line lo = line d[6] as vec;
+                line hi = line d[7] as vec;
+                line tmin = 0;
+                line tmax = reach;
+                repeat (line a to 3) {
+                    line col = line W[line a] as vec;
+                    line oa = line o.dot(line col);
+                    line da = dir.dot(line col);
+                    line la = line lo.x;
+                    line ha = line hi.x;
+                    if (line a == 2) {
+                        line la = line lo.y;
+                        line ha = line hi.y;
+                    } else if (line a == 3) {
+                        line la = line lo.z;
+                        line ha = line hi.z;
+                    }
+                    if (num.abs(line da) < 0.000001) {
+                        if (line oa < line la || line oa > line ha) {
+                            line tmax = -1;
+                        }
+                    } else {
+                        line t1 = (line la - line oa) / line da;
+                        line t2 = (line ha - line oa) / line da;
+                        line tmin = num.max(line tmin, num.min(line t1, line t2));
+                        line tmax = num.min(line tmax, num.max(line t1, line t2));
+                    }
+                }
+                if (line tmax >= line tmin) {
+                    // in order by distance
+                    line at = line hits.len() + 1;
+                    repeat (line q to line hits.len()) {
+                        if (line at > line hits.len() && ((line hits[line q] as list)[1] as num) > line tmin) {
+                            line at = line q;
+                        }
+                    }
+                    line hits.insert(line at, [line tmin, line i]);
+                }
+            }
+        }
+    }
+    return line hits;
+}
+
+/** A round doing `amount` damage hits mech m along `dir`: the parts on its
+ * way take it in turn until it is spent. */
+function mechTakesRound(m: num, hits: list, amount: num, dir: vec) {
+    line left = amount;
+    for (line h of hits) {
+        if (line left > 0) {
+            line left = damagePart(m, (line h as list)[2] as num, line left, dir);
+        }
+    }
+}
+
+/** Puts mech m back together: every part whole and back on, damaged models
+ * cleared, not wrecked. */
+function repairMech(m: num) {
+    loadDamage();
+    line all = global mAll[m] as list;
+    line gids = global mGroupIds[m] as list;
+    line o = global mPos[m];
+    repeat (line i to global mDmg.len()) {
+        if (line all[line i] as str == "") {
+            game.spawnItemDisplay(loc(o.x, o.y + mechAnchorUp(), o.z), partItem(m, line i, 0));
+            lastEntity.setDisplayTeleportDuration(1);
+            lastEntity.setDisplayBrightness(15, 15);
+            lastEntity.setDisplayCullingSize(mechCullWidth(), mechCullHeight());
+            lastEntity.setDisplayViewRange(160);
+            line all[line i] = lastEntity.uuid;
+            line g = global mPartGroup[line i];
+            line members = line gids[line g] as list;
+            line members.append(lastEntity.uuid);
+            line gids[line g] = line members;
+        } else if ((global mShown[m] as list)[line i] as num == 1) {
+            select entitiesByName(line all[line i] as str);
+            selectedEntity.setItemDisplayItem(partItem(m, line i, 0));
+            select reset;
+        }
+    }
+    global mAll[m] = line all;
+    global mGroupIds[m] = line gids;
+    line hp = [];
+    line z = [];
+    for (line d of global mDmg) {
+        line hp.append((line d as list)[2]);
+        line z.append(0);
+    }
+    global mHp[m] = line hp;
+    global mBroke[m] = line z;
+    global mShown[m] = line z;
+    global mWreck[m] = 0;
+    damageStatus(m);
+    global gWalking[m] = 1;
+    mechRender(m, 1);
+    ensureMechLoop();
+}
+
+/** @status: the nearest mech's damage, as chat lines. */
+function statusCommand {
+    loadDamage();
+    line m = mechNear();
+    if (line m == 0) {
+        default.sendMessage(s"<gray>No mech here.");
+        return;
+    }
+    line pct = num.round(mechIntegrity(line m) * 100);
+    line mob = num.round(stat(line m, "mob") * 100);
+    line aim = num.round(stat(line m, "aim") * 100);
+    default.sendMessage(s"<gold><b>Mech %var(m)</b></gold> <gray>integrity</gray> <white>%var(pct)%</white> <gray>walking</gray> <white>%var(mob)%</white> <gray>turret</gray> <white>%var(aim)%</white>");
+    if (global mWreck[line m] == 1) {
+        default.sendMessage(s"<red><b>WRECKED</b></red> <gray>(@repair)");
+    }
+    line lines = 0;
+    repeat (line i to global mDmg.len()) {
+        line full = (global mDmg[line i] as list)[2] as num;
+        line hp = (global mHp[line m] as list)[line i] as num;
+        if (line hp < line full) {
+            line id = (global mPart[line i] as list)[1] as str;
+            line p = num.round(line hp / line full * 100);
+            if ((global mBroke[line m] as list)[line i] as num == 1) {
+                line how = "failed";
+                if ((global mDmg[line i] as list)[3] as num == 1) {
+                    line how = "shot off";
+                }
+                default.sendMessage(s"<red>  %var(id)</red> <gray>%var(how)");
+            } else {
+                default.sendMessage(s"<yellow>  %var(id)</yellow> <gray>%var(p)%");
+            }
+            line lines += 1;
+        }
+    }
+    if (line lines == 0) {
+        default.sendMessage(s"<gray>  Not a scratch.");
+    }
+}
+
+/** @damage PART AMOUNT | @damage all AMOUNT: damages the nearest mech (a test
+ * tool); the push comes from the player. */
+function damageCommand(words: list) {
+    loadDamage();
+    line m = mechNear();
+    if (line m == 0) {
+        default.sendMessage(s"<gray>No mech here.");
+        return;
+    }
+    if (words.len() < 3) {
+        default.sendMessage(s"<gray>Usage: <yellow>@damage PART AMOUNT</yellow> or <yellow>@damage all AMOUNT</yellow> (parts as in <yellow>@status</yellow>, e.g. heavy_gun_l)");
+        return;
+    }
+    line amount = num.parse(words[3] as str);
+    line me = default.location;
+    line dir = ((global mPos[line m] - vec(me.x, me.y, me.z)) * vec(1, 0, 1)).setLength(1) + vec(0, 0.3, 0);
+    if (words[2] as str == "all") {
+        repeat (line i to global mDmg.len()) {
+            damagePart(line m, line i, line amount, line dir);
+        }
+    } else if (global mPartIdx.hasKeys(words[2] as str)) {
+        damagePart(line m, global mPartIdx[words[2] as str], line amount, line dir);
+    } else {
+        line name = words[2] as str;
+        default.sendMessage(s"<red>No part %var(name).");
+        return;
+    }
+    global gWalking[line m] = 1;
+    ensureMechLoop();
+    statusCommand();
+}

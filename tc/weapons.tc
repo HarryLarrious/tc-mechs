@@ -9,9 +9,11 @@
 //
 // A round leaves its gun's muzzle (mechMuzzles) along the barrel: +Z of the
 // gun's elevation segment, so it goes where the gun points (the turret lags
-// the pilot's aim). It is hitscan: a ray to the first solid block or entity
-// within weaponRange(), with a little spread; a mob or player (not the pilot)
-// it hits takes the round's damage. Tracers, muzzle smoke, impact effects and
+// the pilot's aim). It is hitscan: a ray to the first solid block, entity or
+// part of another mech within weaponRange(), with a little spread (more when
+// the mech is damaged); a mob or player (not the pilot) it hits takes the
+// round's damage, a mech's part takes the round's mech damage (damage.tc).
+// Guns shot off, out of ammo or jammed don't fire. Tracers, muzzle smoke, impact effects and
 // sounds are shown to everyone.
 
 /** Per mech: ticks the heavy trigger stays held, ticks of light burst left,
@@ -21,7 +23,8 @@ declare global mTrigH: list[num];
 declare global mTrigL: list[num];
 declare global mSpinV: list[num];
 declare global mShotT: list[num];
-/** Parsed mechMuzzles: per gun [1 heavy or 0 light, segment index, muzzle]. */
+/** Parsed mechMuzzles: per gun [1 heavy or 0 light, segment index, muzzle,
+ * side (l or r)]. */
 declare global wGuns: list;
 declare global wLoaded: num;
 
@@ -61,7 +64,12 @@ function loadWeapons {
         if (line gl[1] as str == "heavy") {
             line heavy = 1;
         }
-        global wGuns.append([line heavy, mechJointSeg(line gl[2] as str), line gl[3]]);
+        line joint = line gl[2] as str;
+        line side = "r";
+        if (line joint == "elev_hl" || line joint == "elev_ll") {
+            line side = "l";
+        }
+        global wGuns.append([line heavy, mechJointSeg(line joint), line gl[3], line side]);
     }
     global wLoaded = mechDataVersion();
 }
@@ -85,7 +93,7 @@ function weaponsClear {
 /** One tick of mech m's guns (mechLoop, after the walk, before drawing):
  * spins the heavy barrels up or down and fires what the pilot holds. */
 function weaponsTick(m: num) {
-    line armed = global mPilot[m] != "" && global mBoard[m] == 0;
+    line armed = global mPilot[m] != "" && global mBoard[m] == 0 && global mWreck[m] == 0;
     line v = global mSpinV[m];
     if (line armed && global mTrigH[m] > 0) {
         line v = num.min(spinMax(), line v + 2.5);
@@ -123,27 +131,63 @@ function weaponsTick(m: num) {
         line gl = line g as list;
         line heavy = line gl[1] as num;
         if ((line heavy == 1 && line fireH) || (line heavy == 0 && line fireL)) {
-            line S = line segs[line gl[2] as num] as list;
-            line muzzle = rotApply(line W, rotApply(line S, line gl[3] as vec) + (line S[4] as vec)) + line o;
-            line dir = rotApply(line W, line S[3] as vec);
-            fireRound(m, line heavy, line muzzle, line dir);
+            // a gun shot off, out of ammo or jammed doesn't fire (damage.tc)
+            line kind = "light_";
+            line jam = stat(m, "jamL");
+            line extra = stat(m, "spread");
+            if (line heavy == 1) {
+                line kind = "heavy_";
+                line jam = stat(m, "jamH");
+                line extra = line extra + stat(m, "spreadH");
+            }
+            if (stat(m, line kind + (line gl[4] as str)) == 1) {
+                if (num.randomd(0, 1) < line jam) {
+                    allPlayers.playSound(snd("Dispenser Fail", 0.8, 1.4), loc(global mPos[m].x, global mPos[m].y + 6, global mPos[m].z));
+                } else {
+                    line S = line segs[line gl[2] as num] as list;
+                    line muzzle = rotApply(line W, rotApply(line S, line gl[3] as vec) + (line S[4] as vec)) + line o;
+                    line dir = rotApply(line W, line S[3] as vec);
+                    fireRound(m, line heavy, line muzzle, line dir, line extra);
+                }
+            }
         }
     }
 }
 
 /** Fires one round of mech m's gun (heavy 1 or light 0) from `from` along
- * `dir` (world): to the first solid block, hurting what it passes through. */
-function fireRound(m: num, heavy: num, from: vec, dir: vec) {
-    line spread = 0.022;
+ * `dir` (world), with `extra` spread from damage: to the first solid block,
+ * entity or other mech's part, hurting what it hits. */
+function fireRound(m: num, heavy: num, from: vec, dir: vec, extra: num = 0) {
+    line spread = 0.022 + extra;
     line dmg = lightDamage();
+    line mdmg = lightMechDamage();
     if (heavy == 1) {
-        line spread = 0.012;
+        line spread = 0.012 + extra;
         line dmg = heavyDamage();
+        line mdmg = heavyMechDamage();
     }
     line d = (dir + vec(num.randomd(0 - line spread, line spread), num.randomd(0 - line spread, line spread), num.randomd(0 - line spread, line spread))).setLength(1);
     line shot = loc(from.x, from.y, from.z).setDirection(line d);
     line hit = game.raycast(line shot, weaponRange(), entityCollision="True", blockCollision="Solid blocks");
     line dist = (vec(line hit.x, line hit.y, line hit.z) - from).len();
+    // another mech's part nearer than that takes the round (damage.tc)
+    line mh = mechRayHit(m, from, line d, line dist);
+    if (line mh.len() > 0) {
+        mechTakesRound(line mh[2] as num, line mh[3] as list, line mdmg, line d);
+        line p = from + line d * (line mh[1] as num);
+        line hit = loc(line p.x, line p.y, line p.z);
+        allPlayers.displayParticleLine(par("Electric Spark"), line shot, line hit, 1.5);
+        allPlayers.displayParticleEffect(par("Large Smoke"), line shot);
+        allPlayers.displayParticleEffect(par("Electric Spark"), line hit);
+        allPlayers.playSound(snd("Anvil Land", 0.5, num.randomd(1.4, 1.9)), line hit);
+        if (heavy == 1) {
+            allPlayers.playSound(snd("Firework Large Blast", 2, 0.55), line shot);
+            allPlayers.displayParticleEffect(par("Explosion"), line hit);
+        } else {
+            allPlayers.playSound(snd("Firework Blast", 1.2, 1.7), line shot);
+        }
+        return;
+    }
     // what it hit: the entity nearest the impact, if the impact is on its
     // body (within 1.5 m of it sideways, from its feet to 3 m up), and not
     // the pilot

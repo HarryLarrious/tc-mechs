@@ -49,6 +49,9 @@ declare global mGone: list[num];
  * rides, moved with the torso every tick) and of the pilot ("" for none). */
 declare global mSeat: list[str];
 declare global mPilot: list[str];
+/** Per mech: armor paint and accent colors (for re-dressing parts). */
+declare global mPaint: list[num];
+declare global mAccent: list[num];
 /** Number of mechs. */
 declare global mechCount: num;
 
@@ -68,7 +71,7 @@ declare global mechLoaded: num;
 
 /** The parsed data's current version. */
 function mechDataVersion(): num {
-    return 10;
+    return 11;
 }
 
 /** Parses the generated data once. */
@@ -207,6 +210,8 @@ function mechRender(m: num, dur: num = 0) {
     }
     line hatch = global mHatch[m];
     line gids = global mGroupIds[m] as list;
+    // each group's matrix and the anchor, for hit tests (damage.tc)
+    line gw = [];
     repeat (line i to global mGroup.len()) {
         line p = global mGroup[line i] as list;
         line S = line segs[line p[1] as num] as list;
@@ -240,10 +245,15 @@ function mechRender(m: num, dur: num = 0) {
         line wy = rotApply(line W, line cy);
         line wz = rotApply(line W, line cz);
         line wt = rotApply(line W, line t) + vec(0, line up, 0);
+        line gw.append([line wx, line wy, line wz, line wt]);
         select entitiesByName(line gids[line i] as list[str]);
         selectedEntity.setDisplayTransformationMatrix([line wx.x, line wy.x, line wz.x, line wt.x, line wx.y, line wy.y, line wz.y, line wt.y, line wx.z, line wy.z, line wz.z, line wt.z, 0, 0, 0, 1]);
         selectedEntity.setDisplayInterpolation(dur, 0);
         select reset;
+    }
+    if (global mGroupW.len() >= m) {
+        global mGroupW[m] = line gw;
+        global mAnchor[m] = vec(line o.x, line o.y + mechAnchorUp(), line o.z);
     }
 }
 
@@ -299,7 +309,10 @@ function spawnMech(at: loc, paint: num, accent: num): num {
     global mBody.append([]);
     global mHatch.append(0);
     global mHatchTo.append(0);
+    global mPaint.append(paint);
+    global mAccent.append(accent);
     weaponsInit();
+    damageInit();
     gaitInit(global mechCount);
     mechRender(global mechCount);
     ensureMechLoop();
@@ -354,6 +367,9 @@ function clearMechs {
     global mGroupIds = [];
     gaitClear();
     weaponsClear();
+    damageClear();
+    global mPaint = [];
+    global mAccent = [];
     global mPos = [];
     global mYaw = [];
     global mJoint = [];

@@ -548,6 +548,7 @@ function gaitFall(m: num) {
  * it here when it hits the ground too hard; for now the speed is kept. */
 function mechLanded(m: num, speed: num) {
     global gImpact[m] = speed;
+    damageLanding(m, speed);
 }
 
 /** Every half second while idle: 1 if a foot of mech m has lost its ground
@@ -572,6 +573,10 @@ function gaitTick(m: num) {
     if (global mPilot[m] != "") {
         line kneelTo = line boardKneel;
     } else if (global gWantSpeed[m] == 0 && global gWantTurn[m] == 0 && global gFollow[m] == "") {
+        line kneelTo = 1;
+    }
+    // wrecked, or a leg lost: down on one knee for good
+    if (global mWreck[m] == 1 || stat(m, "legLost") == 1) {
         line kneelTo = 1;
     }
     global gKneelTo[m] = line kneelTo;
@@ -698,8 +703,9 @@ function gaitTick(m: num) {
     // probe would hit a block or a planted leg would be stretched too far,
     // and slides along a wall when one axis is free
     // (kneeling, getting down or up: it stands still)
-    line wantS = global gWantSpeed[m];
-    line wantT = global gWantTurn[m];
+    // (damage slows the legs: damage.tc)
+    line wantS = global gWantSpeed[m] * stat(m, "mob");
+    line wantT = global gWantTurn[m] * stat(m, "mob");
     if (line kneelTo == 1 || global gKneel[m] > 0) {
         line wantS = 0;
         line wantT = 0;
@@ -757,6 +763,7 @@ function gaitTick(m: num) {
     if (line piloted == 1) {
         line step = global gPilotAimRate * line dt;
     }
+    line step = line step * stat(m, "aim");
     line aim = global gAim[m];
     line aim2 = line aim + num.clamp(wrapDeg(line aimAt - line aim), 0 - line step, line step);
     if (line aim2 != line aim) {
@@ -925,9 +932,13 @@ process mechLoop {
         }
         global mLastBeat = game.ticksSinceStartup;
         line check = global mLastBeat % 10 == 0;
+        debrisTick();
         repeat (line m to global mechCount) {
             if (global mGone[line m] == 0) {
                 // an idle mech wakes up when a foot loses its ground
+                if (line check) {
+                    damageSmoke(line m);
+                }
                 if (global gWalking[line m] == 0 && line check) {
                     if (gaitNeedsWake(line m) == 1) {
                         global gWalking[line m] = 1;

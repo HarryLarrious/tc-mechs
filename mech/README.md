@@ -274,8 +274,8 @@ on whatever block tops are under it.
   slides off an edge rather than through it. If nothing clears, it comes to
   rest where it is. A mech spawned in the air falls too.
 - **Landing:** every landing reports its impact speed to `mechLanded(m,
-  speed)` in `tc/gait.tc`. For now it only stores it, in `gImpact`; the
-  damage model will hurt the mech there when it lands too hard. For scale, a
+  speed)` in `tc/gait.tc`, which keeps it in `gImpact` and hurts the
+  mech's legs when it is over 12 m/s (see [Damage](#damage)). For scale, a
   12-block drop lands at about 19 m/s and a 30-block drop at 30 m/s. On a
   hard landing the body sinks up to 0.32 m into its legs and comes back up at
   1 m/s.
@@ -429,6 +429,57 @@ the sticks. The real player is hidden from the others (Set Entity Hidden),
 from yourself in third person (invisibility), and your hand item draws
 nothing (`mech:empty`).
 
+## Damage
+
+`tc/damage.tc`. Every part has hit points, and its own way of breaking
+(`mech/PARTS.md` lists them all; `mechPartDamage()` in `tc/mech_data.tc`
+carries them to the plot with each part's hitbox).
+
+**Hits.** A round from another mech's gun is tested against the hitboxes of
+every part of every other mech. Each hitbox is an oriented box: the part's
+hitbox in its own frame, placed by the matrix its draw group was last
+drawn with. The nearest part along the ray takes the damage (9 per heavy
+round, 3 per light round). What it can't absorb goes on to the next part
+behind it, so armor soaks hits until it is gone, and then the parts it
+covered take them. A mech never hits itself.
+
+**Landings.** A landing faster than 12 m/s hurts the feet, foot armor, shins,
+ankle and knee motors, and a little the pelvis, more the harder it is.
+
+**Parts.** At half its hit points a part shows its damaged model. At 0 it
+breaks. A part that breaks off (armor, guns, pistons, air tanks, the hatch,
+the antenna, the light gun pintles) leaves the mech as debris with every
+part mounted on it (a light gun goes with its pintle, barrels with their
+cannon). Debris tumbles off with the hit, bounces on the ground and goes
+after 12 seconds. Any other part stays, damaged, and stops working. Badly
+damaged parts still on the mech smoke.
+
+**What breaks does:**
+
+| Damage to | Does |
+| --- | --- |
+| Hip, knee and ankle motors; power pack | Slower walking and turning (the power pack scales every motor) |
+| Air pistons; air tanks; compressor | Slower walking (the pistons need the tanks; the compressor helps) |
+| A foot broken | Walking at 60% |
+| A hip mount, thigh or shin broken | The leg is lost: the mech goes down on one knee and can't walk; the turret and guns still work |
+| Waist ring | The turret turns slower; broken, it stays where it is |
+| Sensors; torso frame | Wider spread for every gun |
+| Heavy cannon or its barrels broken off | That cannon can't fire; bent barrels spread |
+| Ammo bustle | The heavy feed jams (up to half the rounds); at 0 it cooks off, an explosion that hurts the torso, and the cannons run dry |
+| Light gun or its pintle broken off | That gun can't fire; a damaged one jams now and then |
+| Cockpit broken | The pilot's readout goes dark |
+| Pelvis or torso frame broken | The mech is wrecked: it blows up, armor flies off, the pilot is thrown clear and hurt, and it smokes. Nobody can board it until it is repaired |
+
+The pilot's action bar shows the mech's integrity (all its hit points
+against full) and warnings: legs damaged, leg lost, cannon down, turret
+locked.
+
+| Command | What it does |
+| --- | --- |
+| `@status` | The nearest mech's integrity, walking speed and turret speed, and every damaged part |
+| `@damage PART AMOUNT` | Damages one part of the nearest mech (a test tool); `@damage all AMOUNT` damages every part |
+| `@repair` | Puts the nearest mech back together: parts back on, whole, not wrecked |
+
 ## Viewer
 
 `tools/viewer/` has a slider for every joint: the six leg joints, the waist
@@ -498,9 +549,8 @@ geometry when baked.
 
 - Collision limits: the joint ranges keep the pistons working but do not stop
   parts from passing through each other.
-- Game code: firing and damage. `tc/` can spawn, pose, walk over blocks
-  (with gravity), be piloted and remove mechs so far.
-- Not loaded in game yet; the models have only been checked in the viewer.
+- Splash damage: a heavy round hurts only the parts on its ray, not the
+  parts around the impact.
 
 ## Plot code
 

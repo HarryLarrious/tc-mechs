@@ -118,7 +118,7 @@ function boardNearest {
     line best = 0;
     line bestD = 30;
     repeat (line m to global mechCount) {
-        if (global mGone[line m] == 0 && global mPilot[line m] == "" && global mBoard[line m] == 0 && global gFalling[line m] == 0) {
+        if (global mGone[line m] == 0 && global mPilot[line m] == "" && global mBoard[line m] == 0 && global gFalling[line m] == 0 && global mWreck[line m] == 0) {
             line p = global mPos[line m];
             line d = (vec(me.x, p.y, me.z) - line p).len();
             if (line d < line bestD) {
@@ -289,7 +289,8 @@ function pilotClimbReady(m: num): num {
     if (global gKneel[m] < 1 || global mHatch[m] != hatchOpen()) {
         return 0;
     }
-    if (num.abs(wrapDeg(global gAim[m] - global mYaw[m])) > 1) {
+    // (a broken waist ring leaves the turret where it is)
+    if (num.abs(wrapDeg(global gAim[m] - global mYaw[m])) > 1 && stat(m, "aim") > 0) {
         return 0;
     }
     return 1;
@@ -636,7 +637,9 @@ function pilotInput(m: num): list {
 }
 
 /** The pilot's action bar: speed, heading, how far the turret lags the aim,
- * the last landing's impact speed, the cannons' spin and plot CPU. */
+ * the mech's integrity, the last landing's impact speed, the cannons' spin,
+ * plot CPU and damage warnings (or nothing but a warning with the cockpit
+ * broken). */
 function pilotHud(m: num, aimAt: num) {
     line kmh = num.round(num.abs(global gSpeed[m]) * 3.6);
     line heading = num.round(num.wrap(global mYaw[m], 0, 360));
@@ -644,11 +647,29 @@ function pilotHud(m: num, aimAt: num) {
     line impact = num.round(global gImpact[m] * 10) / 10;
     line cpu = num.round(game.cpuUsage);
     line spin = num.round(global mSpinV[m] / spinMax() * 100);
+    line integrity = num.round(stat(m, "integrity") * 100);
+    // damage warnings (damage.tc)
+    line warn = "";
+    if (stat(m, "legLost") == 1) {
+        line warn = line warn + "   <red><b>LEG LOST</b></red>";
+    } else if (stat(m, "mob") < 0.7) {
+        line warn = line warn + "   <gold>LEGS DAMAGED</gold>";
+    }
+    if (stat(m, "heavy_l") == 0 || stat(m, "heavy_r") == 0) {
+        line warn = line warn + "   <red>CANNON DOWN</red>";
+    }
+    if (stat(m, "aim") == 0) {
+        line warn = line warn + "   <red>TURRET LOCKED</red>";
+    }
     line state = "";
     if (global gFalling[m] == 1) {
         line state = "   <red><b>FALLING</b></red>";
     }
     select playersByName(global mPilot[m]);
-    selected.sendActionBar(s"<white><b>%var(kmh)</b></white> <gray>km/h   heading</gray> <white>%var(heading)°</white>   <gray>turret lag</gray> <white>%var(lag)°</white>   <gray>last landing</gray> <white>%var(impact) m/s</white>   <gray>cannons</gray> <white>%var(spin)%</white>   <gray>CPU %var(cpu)%</gray>%var(state)");
+    if (stat(m, "blind") == 1) {
+        selected.sendActionBar(s"<dark_red><b>COCKPIT DAMAGED: SYSTEMS DOWN</b></dark_red>");
+    } else {
+        selected.sendActionBar(s"<white><b>%var(kmh)</b></white> <gray>km/h   heading</gray> <white>%var(heading)°</white>   <gray>turret lag</gray> <white>%var(lag)°</white>   <gray>integrity</gray> <white>%var(integrity)%</white>   <gray>last landing</gray> <white>%var(impact) m/s</white>   <gray>cannons</gray> <white>%var(spin)%</white>   <gray>CPU %var(cpu)%</gray>%var(state)%var(warn)");
+    }
     select reset;
 }

@@ -29,10 +29,23 @@ playerevent command {
         boardNearest();
     } else if (line cmd == "exit") {
         exitMech();
+    } else if (line cmd == "status") {
+        // @status: the nearest mech's damage
+        statusCommand();
+    } else if (line cmd == "damage") {
+        // @damage PART AMOUNT | @damage all AMOUNT: hurts the nearest mech (testing)
+        damageCommand(line words);
+    } else if (line cmd == "repair") {
+        // @repair: the nearest mech, as new
+        line m = mechNear();
+        if (line m != 0) {
+            repairMech(line m);
+            default.sendMessage(s"<gray>Mech %var(m) repaired.");
+        }
     } else if (line cmd == "pack") {
         packSend();
     } else {
-        default.sendMessage(s"<gray>Commands: <yellow>@mech [turn]</yellow>, <yellow>@walk [m/s] [turn]</yellow>, <yellow>@turn [deg/s]</yellow>, <yellow>@stop</yellow>, <yellow>@follow</yellow>, <yellow>@board</yellow>, <yellow>@exit</yellow> (or F), <yellow>@pose JOINT DEGREES</yellow>, <yellow>@pose reset</yellow>, <yellow>@clearmechs</yellow>, <yellow>@pack</yellow>");
+        default.sendMessage(s"<gray>Commands: <yellow>@mech [turn]</yellow>, <yellow>@walk [m/s] [turn]</yellow>, <yellow>@turn [deg/s]</yellow>, <yellow>@stop</yellow>, <yellow>@follow</yellow>, <yellow>@board</yellow>, <yellow>@exit</yellow> (or F), <yellow>@pose JOINT DEGREES</yellow>, <yellow>@pose reset</yellow>, <yellow>@status</yellow>, <yellow>@damage PART AMOUNT</yellow>, <yellow>@repair</yellow>, <yellow>@clearmechs</yellow>, <yellow>@pack</yellow>");
     }
 }
 
