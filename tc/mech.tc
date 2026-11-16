@@ -71,7 +71,7 @@ declare global mechLoaded: num;
 
 /** The parsed data's current version. */
 function mechDataVersion(): num {
-    return 11;
+    return 12;
 }
 
 /** Parses the generated data once. */

@@ -16,16 +16,20 @@ function mechSegData(): list {
         "shin_r 5 knee_r x -1.575 4.095 1.155 -75 75",
         "foot_r 6 ankle_r x -1.575 1.302 -0.63 -43 42",
         "torso 1 waist y 0 8.19 0 -180 180",
-        "hgun_l 8 elev_hl x 2.73 9.24 0.105 -35 12",
-        "hgun_r 8 elev_hr x -2.73 9.24 0.105 -35 12",
-        "lgun_l 8 elev_ll x 0.945 10.668 0.105 -35 8",
-        "lgun_r 8 elev_lr x -0.945 10.668 0.105 -35 8"
+        "hyaw_l 8 trav_hl y 2.73 9.24 0.105 -15 15",
+        "hyaw_r 8 trav_hr y -2.73 9.24 0.105 -15 15",
+        "lyaw_l 8 trav_ll y 0.945 10.668 0.105 -45 45",
+        "lyaw_r 8 trav_lr y -0.945 10.668 0.105 -45 45",
+        "hgun_l 9 elev_hl x 2.73 9.24 0.105 -35 12",
+        "hgun_r 10 elev_hr x -2.73 9.24 0.105 -35 12",
+        "lgun_l 11 elev_ll x 0.945 10.668 0.105 -35 8",
+        "lgun_r 12 elev_lr x -0.945 10.668 0.105 -35 8"
     ];
 }
 
 /** Number of segments. */
 function mechSegCount(): num {
-    return 12;
+    return 16;
 }
 
 /** The mech's parts in spawn order, each "id itemModel seg anim px py pz
@@ -90,15 +94,15 @@ function mechPartData(): list {
         "ammo_bustle mech:torso/ammo_bustle 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "antenna mech:torso/antenna 8 fixed 0 9.24 0 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "heavy_mount_l mech:guns/heavy_mount_l 8 fixed 2.73 9.24 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
-        "heavy_gun_l mech:guns/heavy_gun_l 9 fixed 2.73 9.24 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
-        "heavy_barrels_l mech:guns/heavy_barrels_l 9 spin_z 2.73 9.24 1.47 1 0 0 0 1 0 0 0 1 0 0 0 0",
-        "light_mount_l mech:guns/light_mount_l 8 fixed 0.945 10.668 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
-        "light_gun_l mech:guns/light_gun_l 11 fixed 0.945 10.668 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
+        "heavy_gun_l mech:guns/heavy_gun_l 13 fixed 2.73 9.24 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
+        "heavy_barrels_l mech:guns/heavy_barrels_l 13 spin_z 2.73 9.24 1.47 1 0 0 0 1 0 0 0 1 0 0 0 0",
+        "light_mount_l mech:guns/light_mount_l 11 fixed 0.945 10.668 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
+        "light_gun_l mech:guns/light_gun_l 15 fixed 0.945 10.668 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
         "heavy_mount_r mech:guns/heavy_mount_r 8 fixed -2.73 9.24 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
-        "heavy_gun_r mech:guns/heavy_gun_r 10 fixed -2.73 9.24 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
-        "heavy_barrels_r mech:guns/heavy_barrels_r 10 spin_z -2.73 9.24 1.47 1 0 0 0 1 0 0 0 1 0 0 0 0",
-        "light_mount_r mech:guns/light_mount_r 8 fixed -0.945 10.668 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
-        "light_gun_r mech:guns/light_gun_r 12 fixed -0.945 10.668 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0"
+        "heavy_gun_r mech:guns/heavy_gun_r 14 fixed -2.73 9.24 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
+        "heavy_barrels_r mech:guns/heavy_barrels_r 14 spin_z -2.73 9.24 1.47 1 0 0 0 1 0 0 0 1 0 0 0 0",
+        "light_mount_r mech:guns/light_mount_r 12 fixed -0.945 10.668 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0",
+        "light_gun_r mech:guns/light_gun_r 16 fixed -0.945 10.668 0.105 1 0 0 0 1 0 0 0 1 0 0 0 0"
     ];
 }
 

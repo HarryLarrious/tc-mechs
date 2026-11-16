@@ -143,8 +143,13 @@ right-hand guns are the left-hand ones mirrored.
 | `heavy_mount_l/r` | Base plate bolted to the side armor, with a finned elevation motor, gussets and the feed port. Elevation is +35° up to 12° down |
 | `heavy_gun_l/r` | Six-barrel rotary cannon: armored receiver, barrel drive housing with a light ring, a vented heat shield to a front barrel clamp, a recoil buffer and a feed inlet |
 | `heavy_barrels_l/r` | The barrel cluster (six barrels on a spindle, two clamps, a muzzle ring). It spins about its own axis (`spin_z`) |
-| `light_mount_l/r` | Pintle on the roof: base ring, turntable, yoke and a small elevation motor |
+| `light_mount_l/r` | Pintle on the roof: base ring, turntable, yoke and a small elevation motor. It turns with its gun |
 | `light_gun_l/r` | Light machine gun: receiver with an armored cover, a gun shield, a cooling jacket, an ammo can and a sight. Elevation is +35° up to 8° down |
+
+Each gun also turns on its own on top of the turret (`trav_hl`, `trav_hr`,
+`trav_ll`, `trav_lr`: about the vertical axis through its trunnion), before
+it lifts. The heavy cannons turn 15° either way, as far as their receivers
+clear the hull; the light guns turn 45° either way on their pintles.
 
 ## Leg
 
@@ -369,7 +374,7 @@ plays them through the torso's transform, and the viewer's "Board" and
 | --- | --- |
 | W / S | Walk forward (full speed) / back (half speed) |
 | A / D | Turn left / right on the legs |
-| Look around | The turret turns toward where you look, at 60°/s, and all four guns tilt to your pitch |
+| Look around | The guns swing toward where you look first (cannons at 150°/s within 15°, light guns at 300°/s within 45°), the turret follows at 60°/s and the guns center again as it catches up; all four tilt to your pitch. A damaged cannon mount turns its cannon slower, a broken one not at all |
 | Right click (hold) | Heavy rotary cannons: the barrels spin up, then both fire while you hold |
 | Left click | A burst from the two light machine guns on the roof |
 | Q (drop item) | Switches your view to the twin-lens camera pod on the roof and back; nothing is dropped. The view turns with the turret. With the sensors destroyed the camera is offline |

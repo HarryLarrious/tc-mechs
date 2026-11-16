@@ -65,6 +65,8 @@ ROOF_Y = 4.88                         # top of the roof plates
 HATCH_Z = -0.68                       # roof hatch, at the back of the cabin
 H_RANGE = [-35, 12]                   # elevation, degrees (negative = muzzle up)
 L_RANGE = [-35, 8]
+H_TRAVERSE = [-15, 15]                # each gun turns this far either side of the turret's facing:
+L_TRAVERSE = [-45, 45]                # the cannons' receivers sit close to the hull, the pintles turn freely
 
 
 def _part(out, p: Part, elems: list[Elem], pivot):
@@ -457,7 +459,7 @@ def torso_parts():
     _part(left, Part("heavy_barrels_l", "Heavy cannon barrel cluster (left)", "weapon", "heavy_gun_l", "hgun_l",
                      HBARREL, 140, 160, "detach", "Bent: shots spread; shot off: the cannon cannot fire",
                      anim="spin_z", damaged=False), to_local(_heavy_barrels(), tuple(-c for c in HBARREL)), HBARREL)
-    _part(left, Part("light_mount_l", "Light gun pintle (left)", "actuator", "torso_top", "torso", LGUN,
+    _part(left, Part("light_mount_l", "Light gun pintle (left)", "actuator", "torso_top", "lyaw_l", LGUN,
                      18, 80, "detach", "Torn off with its gun", damaged=False), _light_mount(), LGUN)
     _part(left, Part("light_gun_l", "Light machine gun (left)", "weapon", "light_mount_l", "lgun_l", LGUN,
                      35, 90, "detach", "Damaged: jams now and then; shot off: one gun fewer"), _light_gun(), LGUN)
@@ -466,13 +468,19 @@ def torso_parts():
     for p in left:
         guns.append(_mirror(p))
 
-    segments = ["torso", "hgun_l", "hgun_r", "lgun_l", "lgun_r"]
+    # each gun turns on its own (trav_*, about Y at its trunnion) on top of the
+    # turret, faster than the turret, within a small arc; then lifts (elev_*)
+    segments = ["torso", "hyaw_l", "hyaw_r", "lyaw_l", "lyaw_r", "hgun_l", "hgun_r", "lgun_l", "lgun_r"]
     joints = {"waist": {"pivot": list(WAIST), "axis": "y", "parent": "pelvis", "child": "torso",
                         "range": [-180, 180], "label": "Waist"}}
     for t, s in (("l", 1), ("r", -1)):
         side = "L" if s > 0 else "R"
-        joints[f"elev_h{t}"] = {"pivot": [s * HGUN[0], HGUN[1], HGUN[2]], "axis": "x", "parent": "torso",
+        joints[f"trav_h{t}"] = {"pivot": [s * HGUN[0], HGUN[1], HGUN[2]], "axis": "y", "parent": "torso",
+                                "child": f"hyaw_{t}", "range": H_TRAVERSE, "label": f"Heavy {side} turn"}
+        joints[f"trav_l{t}"] = {"pivot": [s * LGUN[0], LGUN[1], LGUN[2]], "axis": "y", "parent": "torso",
+                                "child": f"lyaw_{t}", "range": L_TRAVERSE, "label": f"Light {side} turn"}
+        joints[f"elev_h{t}"] = {"pivot": [s * HGUN[0], HGUN[1], HGUN[2]], "axis": "x", "parent": f"hyaw_{t}",
                                 "child": f"hgun_{t}", "range": H_RANGE, "label": f"Heavy {side}"}
-        joints[f"elev_l{t}"] = {"pivot": [s * LGUN[0], LGUN[1], LGUN[2]], "axis": "x", "parent": "torso",
+        joints[f"elev_l{t}"] = {"pivot": [s * LGUN[0], LGUN[1], LGUN[2]], "axis": "x", "parent": f"lyaw_{t}",
                                 "child": f"lgun_{t}", "range": L_RANGE, "label": f"Light {side}"}
     return torso, guns, segments, joints

@@ -152,7 +152,8 @@ function loadGait {
         return;
     }
     global gSegs = [];
-    for (line j of ["hip_l", "knee_l", "ankle_l", "hip_r", "knee_r", "ankle_r", "waist", "elev_hl", "elev_hr", "elev_ll", "elev_lr"]) {
+    for (line j of ["hip_l", "knee_l", "ankle_l", "hip_r", "knee_r", "ankle_r", "waist", "elev_hl", "elev_hr", "elev_ll", "elev_lr",
+                    "trav_hl", "trav_hr", "trav_ll", "trav_lr"]) {
         global gSegs.append(mechJointSeg(line j as str));
     }
     global gHip = (global mSeg[global gSegs[1]] as list)[5] as vec;
@@ -781,6 +782,31 @@ function gaitTick(m: num) {
     }
     global gAim[m] = line aim;
 
+    // guns: each turns on its own toward the aim, within its arc and much
+    // faster than the turret (cannons 150 degrees/s, light guns 300), so they
+    // get on target first and the turret catches up; with nothing to aim at
+    // they come back to center. A damaged cannon mount turns slower, a broken
+    // one not at all.
+    line aiming = line piloted == 1 || line follow != "";
+    line gunLead = wrapDeg(line aim - line aimAt);
+    repeat (line i to 4) {
+        line s = global gSegs[line i + 11];
+        line seg = global mSeg[line s] as list;
+        line want = 0;
+        if (line aiming) {
+            line want = num.clamp(line gunLead, line seg[6] as num, line seg[7] as num);
+        }
+        line rate = gunTurnRate(0) * line dt;
+        if (line i <= 2) {
+            line mount = "heavy_mount_r";
+            if (line i == 1) {
+                line mount = "heavy_mount_l";
+            }
+            line rate = gunTurnRate(1) * line dt * (0.3 + 0.7 * partFrac(m, line mount)) * (1 - partBroken(m, line mount));
+        }
+        line joints = setJoint(line joints, line s, approach(line joints[line s] as num, line want, line rate));
+    }
+
     // steps: a lagging foot swings when the other is planted, to the first
     // good landing spot among the planned step, a longer one and shorter ones
     line lead = line speed * line swing * global gLead;
@@ -889,7 +915,7 @@ function gaitTick(m: num) {
     // redrawing it (its feet are still checked every half second)
     line still = 0;
     line gunsLevel = 1;
-    repeat (line i to 4) {
+    repeat (line i to 8) {
         if (line joints[global gSegs[line i + 7]] as num != 0) {
             line gunsLevel = 0;
         }
@@ -911,6 +937,14 @@ function gaitTick(m: num) {
     if (line piloted == 1) {
         pilotHud(m, line aimAt);
     }
+}
+
+/** How fast a gun turns on the turret (degrees/s): heavy (1) or light (0). */
+function gunTurnRate(heavy: num): num {
+    if (heavy == 1) {
+        return 150;
+    }
+    return 300;
 }
 
 /** Starts the mech tick loop unless one beat within the last few ticks. */

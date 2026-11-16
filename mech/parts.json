@@ -9993,6 +9993,10 @@
   "shin_r",
   "foot_r",
   "torso",
+  "hyaw_l",
+  "hyaw_r",
+  "lyaw_l",
+  "lyaw_r",
   "hgun_l",
   "hgun_r",
   "lgun_l",
@@ -10104,6 +10108,36 @@
    ],
    "label": "Waist"
   },
+  "trav_hl": {
+   "pivot": [
+    2.73,
+    9.24,
+    0.105
+   ],
+   "axis": "y",
+   "parent": "torso",
+   "child": "hyaw_l",
+   "range": [
+    -15,
+    15
+   ],
+   "label": "Heavy L turn"
+  },
+  "trav_ll": {
+   "pivot": [
+    0.945,
+    10.668,
+    0.105
+   ],
+   "axis": "y",
+   "parent": "torso",
+   "child": "lyaw_l",
+   "range": [
+    -45,
+    45
+   ],
+   "label": "Light L turn"
+  },
   "elev_hl": {
    "pivot": [
     2.73,
@@ -10111,7 +10145,7 @@
     0.105
    ],
    "axis": "x",
-   "parent": "torso",
+   "parent": "hyaw_l",
    "child": "hgun_l",
    "range": [
     -35,
@@ -10126,13 +10160,43 @@
     0.105
    ],
    "axis": "x",
-   "parent": "torso",
+   "parent": "lyaw_l",
    "child": "lgun_l",
    "range": [
     -35,
     8
    ],
    "label": "Light L"
+  },
+  "trav_hr": {
+   "pivot": [
+    -2.73,
+    9.24,
+    0.105
+   ],
+   "axis": "y",
+   "parent": "torso",
+   "child": "hyaw_r",
+   "range": [
+    -15,
+    15
+   ],
+   "label": "Heavy R turn"
+  },
+  "trav_lr": {
+   "pivot": [
+    -0.945,
+    10.668,
+    0.105
+   ],
+   "axis": "y",
+   "parent": "torso",
+   "child": "lyaw_r",
+   "range": [
+    -45,
+    45
+   ],
+   "label": "Light R turn"
   },
   "elev_hr": {
    "pivot": [
@@ -10141,7 +10205,7 @@
     0.105
    ],
    "axis": "x",
-   "parent": "torso",
+   "parent": "hyaw_r",
    "child": "hgun_r",
    "range": [
     -35,
@@ -10156,7 +10220,7 @@
     0.105
    ],
    "axis": "x",
-   "parent": "torso",
+   "parent": "lyaw_r",
    "child": "lgun_r",
    "range": [
     -35,
@@ -12546,7 +12610,7 @@
    "label": "Light gun pintle (left)",
    "group": "actuator",
    "parent": "torso_top",
-   "segment": "torso",
+   "segment": "lyaw_l",
    "item_model": "mech:guns/light_mount_l",
    "pivot": [
     0.945,
@@ -12743,7 +12807,7 @@
    "label": "Light gun pintle (right)",
    "group": "actuator",
    "parent": "torso_top",
-   "segment": "torso",
+   "segment": "lyaw_r",
    "item_model": "mech:guns/light_mount_r",
    "pivot": [
     -0.945,
