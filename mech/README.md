@@ -372,6 +372,7 @@ plays them through the torso's transform, and the viewer's "Board" and
 | Look around | The turret turns toward where you look, at 60°/s, and all four guns tilt to your pitch |
 | Right click (hold) | Heavy rotary cannons: the barrels spin up, then both fire while you hold |
 | Left click | A burst from the two light machine guns on the roof |
+| Q (drop item) | Switches your view to the twin-lens camera pod on the roof and back; nothing is dropped. The view turns with the turret. With the sensors destroyed the camera is offline |
 | F | Get out (`@exit` too) |
 | Shift | Nothing: dismounting is cancelled, so you can't fall out by accident |
 
@@ -400,6 +401,12 @@ tracer and muzzle smoke. A heavy round explodes on impact (particles and
 sound, no block damage); a light round throws sparks. The action bar shows
 the cannons' spin. Holding right click repeats the click every 4 ticks, so
 the trigger counts as held for 6 ticks after each one.
+
+In camera view your eye sits just ahead of the roof camera's lenses
+(`mechCameraEye()`, from `CAMERA_EYE` in `pack/src/mech_torso.py`): the seat
+you ride moves there, and your body stays drawn in the chair (its displays
+ride the seat, offset back to the cockpit). The action bar shows CAMERA.
+Getting out, or losing the sensors, puts you back in the cockpit view.
 
 ### Pilot model
 

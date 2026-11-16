@@ -70,7 +70,7 @@ In game (play mode). Joining sets your third-person camera 15 blocks back (the `
 | `@turn [deg/s]` | The nearest mech turns on the spot (30°/s by default, up to 40; + right) |
 | `@stop` | The nearest mech stops; its feet settle under it and it kneels (parked) |
 | `@follow` | The nearest mech walks after you and aims its torso and guns at you; `@follow` again or `@stop` ends it |
-| `@board` | Boards the nearest free mech within 30 blocks: you sprint to it while it kneels and opens its hatch, leap to its knee piston, scramble up onto the roof and drop in through the hatch, then it stands up. W/S walk, A/D turn, look to aim the turret and guns, hold right click for the cannons, left click for the machine guns, F gets out |
+| `@board` | Boards the nearest free mech within 30 blocks: you sprint to it while it kneels and opens its hatch, leap to its knee piston, scramble up onto the roof and drop in through the hatch, then it stands up. W/S walk, A/D turn, look to aim the turret and guns, hold right click for the cannons, left click for the machine guns, Q for the roof camera, F gets out |
 | `@exit` | Gets out of the mech you pilot (same as F): it kneels, and you spring out of the hatch, sprint along the roof and jump down off its knee |
 | `@pose JOINT DEGREES` | Moves a joint on the nearest mech: `hip_l`, `knee_l`, `ankle_l`, `hip_r`, `knee_r`, `ankle_r`, `waist`, `elev_hl`, `elev_hr`, `elev_ll`, `elev_lr` |
 | `@pose reset` | Puts the nearest mech back in its rest pose |

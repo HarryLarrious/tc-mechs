@@ -309,6 +309,7 @@ function spawnMech(at: loc, paint: num, accent: num): num {
     global mBody.append([]);
     global mHatch.append(0);
     global mHatchTo.append(0);
+    global mCamView.append(0);
     global mPaint.append(paint);
     global mAccent.append(accent);
     weaponsInit();
@@ -384,6 +385,7 @@ function clearMechs {
     global mBody = [];
     global mHatch = [];
     global mHatchTo = [];
+    global mCamView = [];
     global mechCount = 0;
 }
 

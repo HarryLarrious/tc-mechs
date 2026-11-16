@@ -253,6 +253,12 @@ function mechMuzzles(): list {
     return [["heavy", "elev_hl", vec(2.73, 9.24, 5.355)], ["light", "elev_ll", vec(0.945, 10.668, 2.268)], ["heavy", "elev_hr", vec(-2.73, 9.24, 5.355)], ["light", "elev_lr", vec(-0.945, 10.668, 2.268)]];
 }
 
+/** Where the pilot's eye goes in camera view: just ahead of the roof camera
+ * pod's lenses, in the mech frame at rest (m); it turns with the torso. */
+function mechCameraEye(): vec {
+    return vec(0, 10.353, 1.302);
+}
+
 /** The pilot's seat: the top center of the chair's seat in the mech frame
  * at rest (it turns with the torso). A rider's eyes are 1.03 m above it. */
 function mechCockpitSeat(): vec {

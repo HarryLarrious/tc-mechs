@@ -208,6 +208,9 @@ def _side_l():
     return e
 
 
+CAMERA_EYE = (0.0, 4.93, 0.62)         # just ahead of the roof camera pod's twin lenses
+
+
 def _sensors():
     # The visor only has its outer face, so from inside the cabin it is see-through.
     e = [box((-VIEW_X, VIEW_Y[0], 0.985), (VIEW_X, VIEW_Y[1], 0.99), "visor", faces=("south",)),

@@ -52,6 +52,8 @@ declare global mBody: list;
  * moves to. */
 declare global mHatch: list[num];
 declare global mHatchTo: list[num];
+/** Per mech: 1 while the pilot looks through the roof camera (Q toggles it). */
+declare global mCamView: list[num];
 /** The boarding and getting-out timelines, parsed: per sample 33 numbers
  * (pilotBoardPath, pilotExitPath). */
 declare global pPath: list;
@@ -190,6 +192,7 @@ function pilotRelease(m: num) {
     global mBoardT[m] = 0;
     global mHatchTo[m] = 0;
     global mTrigH[m] = 0;
+    global mCamView[m] = 0;
     global mTrigL[m] = 0;
     global gWantSpeed[m] = 0;
     global gWantTurn[m] = 0;
@@ -343,7 +346,7 @@ function pilotBoardTick(m: num): num {
         if (global gKneel[m] == 0) {
             global mBoard[m] = 0;
             select playersByName(global mPilot[m]);
-            selected.sendMessage(s"<gray>Piloting mech %var(m). <yellow>W/S</yellow> walk, <yellow>A/D</yellow> turn, look to aim, <yellow>right click</yellow> (hold) cannons, <yellow>left click</yellow> machine guns, <yellow>F</yellow> get out.");
+            selected.sendMessage(s"<gray>Piloting mech %var(m). <yellow>W/S</yellow> walk, <yellow>A/D</yellow> turn, look to aim, <yellow>right click</yellow> (hold) cannons, <yellow>left click</yellow> machine guns, <yellow>Q</yellow> roof camera, <yellow>F</yellow> get out.");
             select reset;
         }
     } else if (line state == 5) {
@@ -474,7 +477,7 @@ function pilotRender(m: num, W: list, T: list, o: vec) {
         line sl = line sh + line tl * (6 * line px);
         line sr = line sh - line tl * (6 * line px);
         line limbs = [[line jl, line jl + line legL * (12 * line px), 0], [line jr, line jr + line legR * (12 * line px), 0], [line sl, line sl + line legR * (10 * line px), 0], [line sr, line sr + line legL * (10 * line px), 0]];
-        pilotFigure(m, line H, line tl, line tu, line tf, line limbs, line look);
+        pilotFigure(m, line H, line tl, line tu, line tf, line limbs, line look, vec(0, 0, 0), 0);
         return;
     }
     // the timelines: getting in or out, else seated (boarding's last sample)
@@ -499,7 +502,17 @@ function pilotRender(m: num, W: list, T: list, o: vec) {
         line base = 6 + (line i - 1) * 7;
         line limbs.append([pathPoint(line row, line base, line tw), pathPoint(line row, line base + 3, line tw), line row[line base + 6]]);
     }
-    pilotFigure(m, pathPoint(line row, 1, line tw), line tl, line tu, line tf, line limbs, line look);
+    // camera view: the eye goes to the roof camera (gone with the sensors)
+    line cam = 0;
+    if (global mCamView[m] == 1) {
+        if (line state == 0 && partBroken(m, "sensors") == 0) {
+            line cam = 1;
+        } else {
+            global mCamView[m] = 0;
+        }
+    }
+    line camEye = rotApply(line tw, mechCameraEye()) + (line tw[4] as vec);
+    pilotFigure(m, pathPoint(line row, 1, line tw), line tl, line tu, line tf, line limbs, line look, line camEye, line cam);
 }
 
 /** Sets display `id` to a part of size (sx, sy, sz) skin pixels with axes
@@ -550,7 +563,7 @@ function pilotLimb(id: str, from: vec, target: vec, rest: num, top: num, roll: n
  * arm, right arm) [its joint, its end (sole or hand), its roll]; the head
  * looks along `look` within what a neck allows. Puts the seat so the pilot's
  * eye is at the head's center. */
-function pilotFigure(m: num, H: vec, tl: vec, tu: vec, tf: vec, limbs: list, look: vec) {
+function pilotFigure(m: num, H: vec, tl: vec, tu: vec, tf: vec, limbs: list, look: vec, camEye: vec, cam: num) {
     line px = global pPx;
     line neck = H + tu * (12 * line px);
     // head, in the body frame
@@ -564,8 +577,13 @@ function pilotFigure(m: num, H: vec, tl: vec, tu: vec, tf: vec, limbs: list, loo
     line headL = tl * line hll.x + tu * line hll.y + tf * line hll.z;
     line headU = tl * line hul.x + tu * line hul.y + tf * line hul.z;
     line headC = line neck + line headU * (4 * line px);
+    // the pilot's eye: the head's center, or the roof camera in camera view
+    line eye = line headC;
+    if (cam == 1) {
+        line eye = camEye;
+    }
     select entitiesByName(global mSeat[m]);
-    selectedEntity.teleport(loc(line headC.x, line headC.y - 1.03, line headC.z));
+    selectedEntity.teleport(loc(line eye.x, line eye.y - 1.03, line eye.z));
     select reset;
     line ids = global mBody[m] as list[str];
     if (line ids.len() < 6) {
@@ -573,7 +591,7 @@ function pilotFigure(m: num, H: vec, tl: vec, tu: vec, tf: vec, limbs: list, loo
     }
     // the parts ride the seat (so the client moves them with the camera,
     // which rides it too): they stand where it seats a passenger, its top
-    line at = line headC - vec(0, 1.03 - 0.01, 0);
+    line at = line eye - vec(0, 1.03 - 0.01, 0);
     pilotPart(line ids[1], line headL, line headU, line headF, 8, 8, 8, line headC, line at);
     pilotPart(line ids[2], tl, tu, tf, 8, 12, 4, H + tu * (6 * line px), line at);
     // displays 3 to 6: right arm, left arm, right leg, left leg
@@ -594,6 +612,24 @@ playerevent dismount {
     // Shift would drop the pilot out of the cockpit; getting out is F.
     if (mechOfPilot(default.uuid) != 0) {
         event.cancel();
+    }
+}
+
+playerevent dropItem {
+    // Q (drop item) toggles the roof camera's view; nothing drops
+    line m = mechOfPilot(default.uuid);
+    if (line m != 0) {
+        event.cancel();
+        if (global mBoard[line m] != 0) {
+            return;
+        }
+        if (partBroken(line m, "sensors") == 1) {
+            default.sendActionBar(s"<red><b>CAMERA OFFLINE</b></red> <gray>(sensors destroyed)");
+            default.playSound(snd("Dispenser Fail", 0.8, 1.2));
+            return;
+        }
+        global mCamView[line m] = 1 - global mCamView[line m];
+        default.playSound(snd("UI Button Click", 0.6, 1.6));
     }
 }
 
@@ -648,6 +684,10 @@ function pilotHud(m: num, aimAt: num) {
     line cpu = num.round(game.cpuUsage);
     line spin = num.round(global mSpinV[m] / spinMax() * 100);
     line integrity = num.round(stat(m, "integrity") * 100);
+    line view = "";
+    if (global mCamView[m] == 1) {
+        line view = "<aqua><b>CAMERA</b></aqua>   ";
+    }
     // damage warnings (damage.tc)
     line warn = "";
     if (stat(m, "legLost") == 1) {
@@ -669,7 +709,7 @@ function pilotHud(m: num, aimAt: num) {
     if (stat(m, "blind") == 1) {
         selected.sendActionBar(s"<dark_red><b>COCKPIT DAMAGED: SYSTEMS DOWN</b></dark_red>");
     } else {
-        selected.sendActionBar(s"<white><b>%var(kmh)</b></white> <gray>km/h   heading</gray> <white>%var(heading)°</white>   <gray>turret lag</gray> <white>%var(lag)°</white>   <gray>integrity</gray> <white>%var(integrity)%</white>   <gray>last landing</gray> <white>%var(impact) m/s</white>   <gray>cannons</gray> <white>%var(spin)%</white>   <gray>CPU %var(cpu)%</gray>%var(state)%var(warn)");
+        selected.sendActionBar(s"%var(view)<white><b>%var(kmh)</b></white> <gray>km/h   heading</gray> <white>%var(heading)°</white>   <gray>turret lag</gray> <white>%var(lag)°</white>   <gray>integrity</gray> <white>%var(integrity)%</white>   <gray>last landing</gray> <white>%var(impact) m/s</white>   <gray>cannons</gray> <white>%var(spin)%</white>   <gray>CPU %var(cpu)%</gray>%var(state)%var(warn)");
     }
     select reset;
 }

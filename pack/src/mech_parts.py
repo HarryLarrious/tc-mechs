@@ -57,7 +57,7 @@ from mech_lib import (GAIT, MATERIALS, MODEL_SCALE, NS, ROOT, TINTS, Elem, Part,
                       KNEEL_POSE, MECH_SCALE, PROBES, gait_scaled, mirror_x, no_dent, plate, prism, ring_x, scale_part, to_local,
                       write_models, write_textures)
 from mech_pelvis import pelvis_parts  # noqa: E402
-from mech_torso import (EYE as PILOT_EYE, HATCH_Z, HIPS_Z, RECLINE, ROOF_Y, SEAT,  # noqa: E402
+from mech_torso import (CAMERA_EYE, EYE as PILOT_EYE, HATCH_Z, HIPS_Z, RECLINE, ROOF_Y, SEAT,  # noqa: E402
                         muzzles, pilot_grips, torso_parts)  # noqa: E402
 from mech_pilot import timeline, write_pilot  # noqa: E402
 
@@ -676,6 +676,10 @@ def write_tc_data(spec) -> None:
         "function mechMuzzles(): list {\n    return ["
         + ", ".join(f'["{kind}", "{joint}", vec({", ".join(tc_num(c * MECH_SCALE) for c in pt)})]' for kind, joint, pt in muzzles())
         + "];\n}\n\n"
+        "/** Where the pilot's eye goes in camera view: just ahead of the roof camera\n"
+        " * pod's lenses, in the mech frame at rest (m); it turns with the torso. */\n"
+        "function mechCameraEye(): vec {\n    return vec("
+        + ", ".join(tc_num(c * MECH_SCALE) for c in CAMERA_EYE) + ");\n}\n\n"
         "/** The pilot's seat: the top center of the chair's seat in the mech frame\n"
         " * at rest (it turns with the torso). A rider's eyes are 1.03 m above it. */\n"
         "function mechCockpitSeat(): vec {\n    return vec("
