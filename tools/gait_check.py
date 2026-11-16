@@ -81,6 +81,7 @@ FALL_DRIFT = G["fall_drift"]
 # higher: halfway first, then lower and higher (a tall step needs the body
 # near one end).
 BODY_MIXES = (0.5, 0.25, 0.75, 0.0, 1.0)
+RIDE_UP = 1.0      # m: a body move blocked by its probes may rise this much to get past (steep stairs)
 LEASH = MAX_REACH  # the body never takes a planted leg past this share of its length, or out of its joints' ranges
 # Landing spots tried, as shares of the planned step: the plan, longer steps
 # (to get a whole foot onto a step instead of perching on its edge, and to
@@ -211,6 +212,7 @@ class Walker:
         self.forced = 0
         self.stepped_off = 0
         self.last = None    # the foot that stepped last: the other goes next
+        self.held = set()   # feet whose legs held the body back this tick (they may step out of turn)
         self.impacts = []                # landing speeds (m/s), for the damage model
 
     def home(self, side, lead, x=None, z=None, yaw=None):
@@ -266,11 +268,13 @@ class Walker:
         already out may stay so, so the body can come back). It does not wait
         on the legs otherwise; they catch up."""
         gy = self.pos[1] if gy is None else gy
+        ok = True
         for s in ("l", "r"):
             if self.swing[s] is None and not self.leg_fits(self.feet[s], x, z, yaw, gy) and \
                     self.leg_fits(self.feet[s], self.pos[0], self.pos[2], self.yaw, self.pos[1]):
-                return False
-        return True
+                self.held.add(s)
+                ok = False
+        return ok
 
     def leg_fits(self, foot, x, z, yaw, gy):
         """Whether a leg can still reach `foot` from a body at (x, gy, z) facing
@@ -299,20 +303,31 @@ class Walker:
                 return False
         return True
 
-    def path_clear(self, a, b, yaw):
-        """Whether a swing from a to b passes over nothing higher than both ends:
-        the ground under the middle of the foot along its way, every half block."""
-        top = max(a[1], b[1])
+    def path_top(self, a, b, yaw):
+        """The highest block top under the middle of the foot along its way
+        from a to b, every half block (None if there is no ground)."""
         f = fwd(yaw)
+        top = None
         p0 = (a[0] + f[0] * G["foot_mid"], a[2] + f[1] * G["foot_mid"])
         p1 = (b[0] + f[0] * G["foot_mid"], b[2] + f[1] * G["foot_mid"])
         n = max(1, math.ceil(math.dist(p0, p1) / 0.5))
         for i in range(n + 1):
             x, z = p0[0] + (p1[0] - p0[0]) * i / n, p0[1] + (p1[1] - p0[1]) * i / n
-            t = self.world.col_top(x, z, top + UP, UP + DOWN)
-            if t is not None and t > top + 0.01:
-                return False
-        return True
+            t = self.world.col_top(x, z, max(a[1], b[1]) + UP, UP + DOWN)
+            if t is not None:
+                top = t if top is None else max(top, t)
+        return top
+
+    def swing_lift(self, a, b, yaw):
+        """How high a swing from a to b lifts: LIFT, more for a step up or
+        down, and enough to clear what it steps over; None if that is more
+        than MAX_RISE above both ends (a wall in the way)."""
+        ends = max(a[1], b[1])
+        top = self.path_top(a, b, yaw)
+        over = 0.0 if top is None else max(0.0, top - ends)
+        if over > MAX_RISE:
+            return None
+        return max(LIFT + 0.6 * abs(b[1] - a[1]), over + 0.5 * LIFT)
 
     def probes_clear(self, x, z, yaw, aim, gy, body_y):
         for frame, px, py, pz in PROBES:
@@ -340,22 +355,24 @@ class Walker:
                 continue
             if fussy and self.toe_jammed(ex, ey, ez, lyaw):
                 continue
-            if not self.path_clear(a, (ex, ey, ez), lyaw):
+            hop = self.swing_lift(a, (ex, ey, ez), lyaw)
+            if hop is None:
                 continue
             # a forced step (its ground went) must land where the leg reaches
             # (at some body height between the two feet: the body follows them)
             if not may_step_off and not any(self.leg_fits((ex, ey, ez), lx, lz, lyaw, self.pos[1] + (ey - self.pos[1]) * k_)
                                             for k_ in (0.0, 0.5, 1.0)):
                 continue
-            self.swing[s] = (0.0, list(a), [ex, ey, ez])
+            self.swing[s] = (0.0, list(a), [ex, ey, ez], hop)
             self.last = s
             return True
         if may_step_off:
             g = self.ground(tx, tz, lyaw, a[1], stand=False)
             if g is None or g < a[1] - MAX_RISE:
                 end = (tx, a[1], tz)
-                if self.path_clear(a, end, lyaw):
-                    self.swing[s] = (0.0, list(a), list(end))
+                hop = self.swing_lift(a, end, lyaw)
+                if hop is not None:
+                    self.swing[s] = (0.0, list(a), list(end), hop)
                     self.last = s
                     self.stepped_off += 1
                     return True
@@ -466,32 +483,44 @@ class Walker:
             return self.legs({"l": 0.0, "r": 0.0}, {"l": 0.0, "r": 0.0}, {s: self.feet[s][1] for s in "lr"})
         gy = self.pos[1]
 
-        # body: move unless a probe would hit a block or a planted leg would
-        # be stretched too far; slide along a wall when one axis is free
+        # body: move unless a probe would hit a block (it slides along a wall
+        # when one axis is free, and stops dead if neither is) or the leash
+        # holds it (it takes a shorter move, or waits a tick, keeping its
+        # speed: the held foot steps next, see below)
         yaw2 = self.yaw + math.radians(self.turn) * dt
         f2 = fwd(yaw2)
         dx, dz = f2[0] * self.speed * dt, f2[1] * self.speed * dt
-        planted = [s for s in ("l", "r") if self.swing[s] is None]
         moved = False
+        walled = True
+        self.held = set()
         tries = ((yaw2, dx, dz), (yaw2, dx, 0.0), (yaw2, 0.0, dz), (yaw2, 0.0, 0.0),
                  (self.yaw, dx, dz), (self.yaw, dx, 0.0), (self.yaw, 0.0, dz))
         for n, (cy, cdx, cdz) in enumerate(tries):
             if n > 0 and cdx == 0 and cdz == 0 and cy == self.yaw:
                 continue
-            nx, nz = self.pos[0] + cdx, self.pos[2] + cdz
-            if not self.probes_clear(nx, nz, cy, self.aim, gy, self.body_y):
-                continue
-            if self.leash_ok(nx, nz, cy):
-                if (cdx, cdz) != (dx, dz):
-                    self.speed = math.hypot(cdx, cdz) / dt * (1 if self.speed >= 0 else -1)
-                if cy != yaw2:
-                    self.turn = 0.0
-                self.pos[0], self.pos[2], self.yaw = nx, nz, cy
-                moved = n == 0 or (dx == 0 and dz == 0 and self.turn == 0)
-                break
+            # (rising up to RIDE_UP if that clears it, as on steep stairs)
+            up = next((u for u in (0.0, 0.5 * RIDE_UP, RIDE_UP)
+                       if self.probes_clear(self.pos[0] + cdx, self.pos[2] + cdz, cy, self.aim, gy + u, self.body_y)), None)
+            if up is None:
+                continue    # a wall this way: try sliding along one axis
+            walled = False
+            for frac in (1.0, 0.5, 0.25):
+                fy = self.yaw + (cy - self.yaw) * frac
+                nx, nz = self.pos[0] + cdx * frac, self.pos[2] + cdz * frac
+                if self.leash_ok(nx, nz, fy, gy + up):
+                    if (cdx, cdz) != (dx, dz):
+                        self.speed = math.hypot(cdx, cdz) / dt * (1 if self.speed >= 0 else -1)
+                    if cy != yaw2:
+                        self.turn = 0.0
+                    self.pos[0], self.pos[2], self.yaw = nx, nz, fy
+                    self.pos[1] = gy + up
+                    gy = self.pos[1]
+                    moved = (n == 0 and frac == 1.0) or (dx == 0 and dz == 0 and self.turn == 0)
+                    break
+            break           # clear of walls this way: moved, or held by the leash for a tick
         if not moved and (abs(self.want_speed) > 0.01 or abs(self.want_turn) > 0.5):
             self.blocked += 1
-        if not moved:
+        if not moved and walled:
             self.speed = 0.0 if not (dx == 0 and dz == 0) else self.speed
         f = fwd(self.yaw)
 
@@ -511,9 +540,11 @@ class Walker:
         limit = STEP if moving else SETTLE
         if self.swing["l"] is None and self.swing["r"] is None:
             order = ("l", "r") if self.last != "l" else ("r", "l")
+            # (a foot whose leg holds the body back goes at once, out of turn)
+            order = tuple(sorted(order, key=lambda s_: s_ not in self.held))
             for s in order:
                 off = math.dist((self.feet[s][0], self.feet[s][2]), self.home(s, lead))
-                if off > limit and (s != self.last or off > 2.5 * limit):
+                if (off > limit and (s != self.last or off > 2.5 * limit)) or s in self.held:
                     lx, lz = self.pos[0] + f[0] * self.speed * SWING, self.pos[2] + f[1] * self.speed * SWING
                     if self.plan_step(s, lead, lx, lz, self.yaw + math.radians(self.turn) * SWING):
                         break
@@ -526,21 +557,21 @@ class Walker:
         for s in ("l", "r"):
             if self.swing[s] is None:
                 continue
-            t, a, b = self.swing[s]
-            t = min(1.0, t + dt / SWING)
+            t, a, b, hop = self.swing[s]
+            t = min(1.0, t + dt / SWING * (2.0 if self.held else 1.0))   # hurry while a leg holds the body
             e = t * t * (3 - 2 * t)
             self.feet[s] = [a[0] + (b[0] - a[0]) * e, a[1] + (b[1] - a[1]) * e, a[2] + (b[2] - a[2]) * e]
             arc = math.sin(math.pi * t)
-            lift[s] = (LIFT + 0.6 * abs(b[1] - a[1])) * arc
+            lift[s] = hop * arc
             arcs[s] = arc
             rise = max(rise, arc)
             foot_y[s] = self.feet[s][1]
-            self.swing[s] = None if t >= 1.0 else (t, a, b)
+            self.swing[s] = None if t >= 1.0 else (t, a, b, hop)
 
         # body height follows the feet (a swinging foot by where it will land),
         # but never so far that a planted leg would be stretched out of reach
         target_y = sum(self.swing[s][2][1] if self.swing[s] is not None else foot_y[s] for s in "lr") / 2
-        y2 = approach(self.pos[1], target_y, CLIMB * dt)
+        y2 = approach(self.pos[1], target_y, (CLIMB + abs(self.speed)) * dt)   # keeps up with any slope it walks
         # the bob and the landing dip settle first, so the height is checked with them
         dip2 = approach(self.dip, 0.0, DIP_RATE * dt)
         body2 = -CROUCH + BOB * rise - dip2

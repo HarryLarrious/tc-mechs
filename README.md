@@ -87,6 +87,7 @@ In game (play mode). Joining sets your third-person camera 15 blocks back (the `
 | `@damage PART AMOUNT` | Damages a part of the nearest mech (a test tool; `@damage all AMOUNT` for every part) |
 | `@repair` | Puts the nearest mech back together |
 | `@clearmechs` | Removes every mech |
+| `@selftest` | Tests the walk where you stand: drives a sprinter and then a walker straight ahead at full speed, then up the highest ground within 60 blocks, and reports each run in chat (distance, rise, top speed, stalls) |
 | `@pack` | Sends the resource pack again |
 
 ### Piloting the sprinter

@@ -100,23 +100,29 @@ function footTilt(foot: vec, yaw: num): num {
     return num.clamp(angYZ(line run, (line hs[2] as num) - (line hs[1] as num)), -30, 30);
 }
 
-/** 1 if a swing from a to b passes over nothing higher than both ends: the
- * ground under the middle of the foot along its way, every half block. */
-function pathClear(a: vec, b: vec, yaw: num): num {
-    line top = num.max(a.y, b.y);
+/** How high a swing from a to b lifts the foot: gLift, more for a step up
+ * or down, and enough to clear the highest block top under the middle of the
+ * foot along its way (every half block); -1 if that is more than gMaxRise
+ * above both ends (a wall in the way). */
+function swingLift(a: vec, b: vec, yaw: num): num {
+    line ends = num.max(a.y, b.y);
     line F = vec(0 - num.sin(yaw), 0, num.cos(yaw));
     line mid = (global tFootSamples[2]).z;
     line p0 = vec(a.x, 0, a.z) + line F * line mid;
     line p1 = vec(b.x, 0, b.z) + line F * line mid;
     line n = num.max(1, num.ceil((line p1 - line p0).len() / 0.5));
+    line over = 0;
     repeat (line i to line n + 1) {
         line p = line p0 + (line p1 - line p0) * ((line i - 1) / line n);
-        line t = colTop(line p.x, line p.z, line top + global gUp, global gUp + global gDown);
-        if (line t > line top + 0.01) {
-            return 0;
+        line t = colTop(line p.x, line p.z, line ends + global gUp, global gUp + global gDown);
+        if (line t > -900) {
+            line over = num.max(line over, line t - line ends);
         }
     }
-    return 1;
+    if (line over > global gMaxRise) {
+        return -1;
+    }
+    return num.max(global gLift + 0.6 * num.abs(b.y - a.y), line over + 0.5 * global gLift);
 }
 
 /** 1 if no collision probe is in a solid block for a body at (x, base, z):

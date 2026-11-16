@@ -87,6 +87,8 @@ declare global gFeet: list;
 declare global gSwT: list;
 declare global gSwA: list;
 declare global gSwB: list;
+/** Per mech, [left, right]: how high each foot's swing lifts (m). */
+declare global gSwL: list;
 /** Leg geometry (left leg, mech frame), set by loadGait. */
 declare global gHip: vec;
 declare global gAnkle: vec;
@@ -342,6 +344,7 @@ function gaitInit(m: num) {
     global gSwT.append([-1, -1]);
     global gSwA.append([vec(0, 0, 0), vec(0, 0, 0)]);
     global gSwB.append([vec(0, 0, 0), vec(0, 0, 0)]);
+    global gSwL.append([0, 0]);
     global gKneel.append(1 - line falling);
     global gKneelTo.append(1);
     if (line falling == 0) {
@@ -381,6 +384,7 @@ function gaitClear {
     global gSwT = [];
     global gSwA = [];
     global gSwB = [];
+    global gSwL = [];
     global gKneel = [];
     global gKneelTo = [];
 }
@@ -413,16 +417,18 @@ function planStep(i: num, lead: num, lpos: vec, lyaw: num, feet: list, gy: num, 
             line ey = groundUnder(line ex, line ez, lyaw, line a.y);
             if (line ey > -900 && num.abs(line ey - line oy) <= global gMaxRise && (line fussy as num == 0 || toeJammed(line ex, line ey, line ez, lyaw) == 0)) {
                 line b = vec(line ex, line ey, line ez);
-                if (pathClear(line a, line b, lyaw) == 1) {
+                // it may step over anything it could climb, lifting to clear it
+                line hop = swingLift(line a, line b, lyaw);
+                if (line hop >= 0) {
                     // the legs do not second-guess a step; only a forced one
                     // (its ground went) must land where the leg reaches, at
                     // some body height between here and there
                     if (stepOff == 1) {
-                        return [line a, line b];
+                        return [line a, line b, line hop];
                     }
                     for (line k of [0, 0.5, 1]) {
                         if (legFits(line b, lpos.x, lpos.z, lyaw, gy + (line ey - gy) * (line k as num)) == 1) {
-                            return [line a, line b];
+                            return [line a, line b, line hop];
                         }
                     }
                 }
@@ -433,27 +439,36 @@ function planStep(i: num, lead: num, lpos: vec, lyaw: num, feet: list, gy: num, 
         line g = groundUnder(line target.x, line target.z, lyaw, line a.y, 0);
         if (line g < -900 || line g < line a.y - global gMaxRise) {
             line b = vec(line target.x, line a.y, line target.z);
-            if (pathClear(line a, line b, lyaw) == 1) {
-                return [line a, line b];
+            line hop = swingLift(line a, line b, lyaw);
+            if (line hop >= 0) {
+                return [line a, line b, line hop];
             }
         }
     }
     return [];
 }
 
-/** The body's leash: 1 if it may stand at (x, gy, z) facing yaw, that is no
- * planted leg that reaches its foot now (at cpos facing cyaw) would stop
- * reaching it there (legFits; a leg already out may stay so, so the body
- * can come back). Otherwise the body does not wait on the legs. */
-function legsAllow(feet: list, swT: list, x: num, z: num, yaw: num, gy: num, cpos: vec, cyaw: num): num {
+/** The body's leash: per leg [left, right], 1 if standing at (x, gy, z)
+ * facing yaw would take that planted leg out of reach when it reaches its
+ * foot now (at cpos facing cyaw; legFits). A leg already out never holds
+ * the body, so it can come back. Otherwise the body does not wait on the
+ * legs, and a leg that holds it steps next, out of turn. */
+function legsHold(feet: list, swT: list, x: num, z: num, yaw: num, gy: num, cpos: vec, cyaw: num): list {
+    line out = [0, 0];
     repeat (line i to 2) {
         if (swT[line i] as num < 0) {
             line f = feet[line i] as vec;
             if (legFits(line f, x, z, yaw, gy) == 0 && legFits(line f, cpos.x, cpos.z, cyaw, cpos.y) == 1) {
-                return 0;
+                line out[line i] = 1;
             }
         }
     }
+    return line out;
+}
+
+/** How far the body may rise to get past something its probes hit (m), as
+ * on steep stairs, where it lags the steps under it. */
+function rideUp(): num {
     return 1;
 }
 
@@ -732,11 +747,14 @@ function gaitTick(m: num) {
             line fall = 1;
             if (line lostN == 1 && line planted == 2) {
                 line st = planStep(line lostAt, 0, global mPos[m], global mYaw[m], line gfeet, (global mPos[m]).y, 0);
-                if (line st.len() == 2) {
+                if (line st.len() == 3) {
                     line swA = global gSwA[m] as list;
                     line swB = global gSwB[m] as list;
                     line swA[line lostAt] = line st[1];
                     line swB[line lostAt] = line st[2];
+                    line swL = global gSwL[m] as list;
+                    line swL[line lostAt] = line st[3];
+                    global gSwL[m] = line swL;
                     line gswT[line lostAt] = 0;
                     global gLast[m] = line lostAt;
                     global gSwA[m] = line swA;
@@ -855,42 +873,67 @@ function gaitTick(m: num) {
     line speed = approach(global gSpeed[m], line wantS, global gAccel * line dt);
     line turn = approach(global gTurn[m], line wantT, global gTurnAccel * line dt);
     line strafe = approach(global gSide[m], line wantSd, global gAccel * line dt);
+    line held = [0, 0];
     if (line speed != 0 || line turn != 0 || line strafe != 0) {
         line yaw2 = line yaw + line turn * line dt;
         line dx = ((0 - num.sin(line yaw2)) * line speed + num.cos(line yaw2) * line strafe) * line dt;
         line dz = (num.cos(line yaw2) * line speed + num.sin(line yaw2) * line strafe) * line dt;
         line full = (line dx * line dx + line dz * line dz) ** 0.5;
         line moved = 0;
+        line done = 0;
+        line walled = 1;
         for (line c of [[1, 1, 1], [1, 1, 0], [1, 0, 1], [1, 0, 0], [0, 1, 1], [0, 1, 0], [0, 0, 1]]) {
             line cl = line c as list;
-            if (line moved == 0) {
+            if (line done == 0) {
                 line cy = line yaw;
                 if (line cl[1] as num == 1) {
                     line cy = line yaw2;
                 }
                 line cdx = line dx * (line cl[2] as num);
                 line cdz = line dz * (line cl[3] as num);
-                line nx = line pos.x + line cdx;
-                line nz = line pos.z + line cdz;
-                if (probesClear(line nx, line nz, line cy, global gAim[m], line pos.y + line bodyY) == 1) {
-                    if (legsAllow(line feet, line swT, line nx, line nz, line cy, line pos.y, line pos, line yaw) == 1) {
-                        if ((line cl[2] as num == 0 || line cl[3] as num == 0) && line full > 0) {
-                            // sliding along a wall: only the free part of the move
-                            line k = (line cdx * line cdx + line cdz * line cdz) ** 0.5 / line full;
-                            line speed = line speed * line k;
-                            line strafe = line strafe * line k;
+                // clear of its probes this way? (rising up to rideUp if that
+                // clears them, as on steep stairs); if not, a wall: try
+                // sliding along one axis
+                line up = -1;
+                for (line u of [0, 0.5, 1]) {
+                    if (line up < 0 && probesClear(line pos.x + line cdx, line pos.z + line cdz, line cy, global gAim[m], line pos.y + (line u as num) * rideUp() + line bodyY) == 1) {
+                        line up = (line u as num) * rideUp();
+                    }
+                }
+                if (line up >= 0) {
+                    // the whole move, or less if a leg holds it (keeping its
+                    // speed: the holding leg steps next)
+                    line done = 1;
+                    line walled = 0;
+                    for (line frac of [1, 0.5, 0.25]) {
+                        if (line moved == 0) {
+                            line fr = line frac as num;
+                            line fy = line yaw + (line cy - line yaw) * line fr;
+                            line fx = line pos.x + line cdx * line fr;
+                            line fz = line pos.z + line cdz * line fr;
+                            line hl = legsHold(line feet, line swT, line fx, line fz, line fy, line pos.y + line up, line pos, line yaw);
+                            if (line hl[1] as num == 0 && line hl[2] as num == 0) {
+                                if ((line cl[2] as num == 0 || line cl[3] as num == 0) && line full > 0) {
+                                    // sliding along a wall: only the free part of the move
+                                    line k = (line cdx * line cdx + line cdz * line cdz) ** 0.5 / line full;
+                                    line speed = line speed * line k;
+                                    line strafe = line strafe * line k;
+                                }
+                                if (line cl[1] as num == 0) {
+                                    line turn = 0;
+                                }
+                                line pos = vec(line fx, line pos.y + line up, line fz);
+                                line yaw = line fy;
+                                line moved = 1;
+                            } else if (line fr == 1) {
+                                line held = line hl;
+                            }
                         }
-                        if (line cl[1] as num == 0) {
-                            line turn = 0;
-                        }
-                        line pos = vec(line nx, line pos.y, line nz);
-                        line yaw = line cy;
-                        line moved = 1;
                     }
                 }
             }
         }
-        if (line moved == 0) {
+        if (line moved == 0 && line walled == 1) {
             line speed = 0;
             line turn = 0;
             line strafe = 0;
@@ -970,18 +1013,27 @@ function gaitTick(m: num) {
         if (global gLast[m] == 1) {
             line order = [2, 1];
         }
+        // (a foot whose leg holds the body back goes at once, out of turn)
+        if (line held[1] as num == 1) {
+            line order = [1, 2];
+        } else if (line held[2] as num == 1) {
+            line order = [2, 1];
+        }
         line started = 0;
         for (line io of line order) {
             line i = line io as num;
             if (line started == 0) {
                 line off = flatDist(line feet[line i] as vec, footHome(3 - 2 * line i, line lead, line pos, line yaw, line leadS));
-                if (line off > line limit && (line i != global gLast[m] || line off > 2.5 * line limit)) {
+                if ((line off > line limit && (line i != global gLast[m] || line off > 2.5 * line limit)) || line held[line i] as num == 1) {
                     line Ls = vec(num.cos(line yaw), 0, num.sin(line yaw));
                     line st = planStep(line i, line lead, line pos + line F * (line speed * line swing) + line Ls * (line strafe * line swing), line yaw + line turn * line swing, line feet, line pos.y, 1, line leadS);
-                    if (line st.len() == 2) {
+                    if (line st.len() == 3) {
                         line swA[line i] = line st[1];
                         line swB[line i] = line st[2];
                         line swT[line i] = 0;
+                        line swL = global gSwL[m] as list;
+                        line swL[line i] = line st[3];
+                        global gSwL[m] = line swL;
                         global gLast[m] = line i;
                         line started = 1;
                     }
@@ -997,14 +1049,19 @@ function gaitTick(m: num) {
     repeat (line i to 2) {
         line t = line swT[line i] as num;
         if (line t >= 0) {
-            line t = num.min(1, line t + line dt / line swing);
+            // (hurrying while a leg holds the body back)
+            line hurry = 1;
+            if (line held[1] as num == 1 || line held[2] as num == 1) {
+                line hurry = 2;
+            }
+            line t = num.min(1, line t + line dt / line swing * line hurry);
             line e = line t * line t * (3 - 2 * line t);
             line a = line swA[line i] as vec;
             line b = line swB[line i] as vec;
             line feet[line i] = line a + (line b - line a) * line e;
             line arc = num.sin(180 * line t);
             line arcs[line i] = line arc;
-            line lift[line i] = (global gLift + 0.6 * num.abs(line b.y - line a.y)) * line arc;
+            line lift[line i] = ((global gSwL[m] as list)[line i] as num) * line arc;
             line rise = num.max(line rise, line arc);
             if (line t >= 1) {
                 line t = -1;
@@ -1024,10 +1081,11 @@ function gaitTick(m: num) {
             line ty += (line feet[line i] as vec).y / 2;
         }
     }
-    line y2 = approach(line pos.y, line ty, global gClimb * line dt);
+    line y2 = approach(line pos.y, line ty, (global gClimb + num.abs(line speed)) * line dt);
     line dip2 = approach(global gDip[m], 0, global gDipRate * line dt);
     line body2 = 0 - global gCrouch + global gBob * line rise - line dip2;
-    if (legsAllow(line feet, line swT, line pos.x, line pos.z, line yaw, line y2, line pos, line yaw) == 1) {
+    line hy = legsHold(line feet, line swT, line pos.x, line pos.z, line yaw, line y2, line pos, line yaw);
+    if (line hy[1] as num == 0 && line hy[2] as num == 0) {
         if (probesClear(line pos.x, line pos.z, line yaw, line aim, line y2 + line body2) == 1) {
             line pos = vec(line pos.x, line y2, line pos.z);
         }

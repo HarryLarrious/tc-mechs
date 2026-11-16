@@ -239,8 +239,9 @@ smoothing, as there is for the rally car's wheels.
   The tilt only changes how the foot looks.
 - **Taking turns:** with both feet down, the foot that did not step last
   steps once it is far enough from its home spot. The foot that just stepped
-  waits for the other one (unless it is badly placed), so a step is never
-  taken back, and a step once started always lands where it was aimed.
+  waits for the other one (unless it is badly placed, or its leg holds the
+  body back: see Body), so a step is never taken back, and a step once
+  started always lands where it was aimed.
 - **Choosing a step:** the foot tries the planned landing spot, then longer
   steps, then shorter ones. A longer step gets the whole foot onto a step.
   It takes the first spot that meets every test, preferring a spot where the
@@ -248,8 +249,9 @@ smoothing, as there is for the rally car's wheels.
   makes a foot at the base of a tall step go up onto it):
   - it has ground,
   - it is within 3.2 m (three blocks) above or below the other foot,
-  - the ground under the foot's middle along its way is nothing higher than
-    both ends, checked every half block.
+  - the ground under the foot's middle along its way, checked every half
+    block, is no more than the climb height (3.2 m) above both ends. The
+    swing lifts high enough to clear it, so a foot steps over a bump.
 
   The legs do not second-guess a step: the leg follows the foot by IK. Only
   a forced step (a planted foot that lost its ground) must land where the leg
@@ -259,11 +261,16 @@ smoothing, as there is for the rally car's wheels.
   The mech climbs steps of up to three blocks, and a 4-block ledge is a wall
   to it. A drop deeper than three blocks is walked off (see Gravity).
 - **Body:** it moves and turns as commanded and does not wait on the legs.
-  Only its probes (below) and a leash stop it: it never takes a planted leg
-  past 97% of its length or out of its hip's and knee's ranges (a leg that is
-  already out never stops a move, so it can come back). Its height follows
-  the feet at 2.1 m/s, with a swinging foot counted where it will land, so the
-  body is already moving up or down a tall step as the foot gets there.
+  Only its probes (below) and a leash stop it. The leash never takes a
+  planted leg past 97% of its length or out of its hip's and knee's ranges (a
+  leg that is already out never holds it, so it can come back). When the
+  leash holds it, the body takes a shorter move or waits a tick but keeps its
+  speed, the swinging foot hurries to land, and the holding foot steps next,
+  out of turn. Only a wall stops the body dead. Its height follows the feet
+  at the climb rate plus its walking speed, so it keeps up with any slope it
+  walks, with a swinging foot counted where it will land. A move its probes
+  would block may rise up to 1 m to get past (`rideUp`), as on steep
+  stairs, where the body lags the steps under it.
 - **Hitbox:** 32 collision probe points (`PROBES` in `mech_lib.py`) on the
   hips, knees, shins, turret hull and heavy guns. The body probes turn with
   the heading, and the hull and gun probes turn with the torso. A move or turn

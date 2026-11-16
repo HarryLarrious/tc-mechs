@@ -549,7 +549,7 @@ function gaitTick(dt) {
   // unless that would put a planted leg out of reach or a probe in a block;
   // the bob and landing dip settle first so the height is checked with them
   const target = ["l", "r"].reduce((t, s) => t + (gait.swing[s] ? gait.swing[s].b[1] : gait.feet[s][1]), 0) / 2;
-  const y2 = approach(gait.gy, target, G.CLIMB * dt);
+  const y2 = approach(gait.gy, target, (G.CLIMB + Math.abs(gait.speed)) * dt);
   const dip2 = approach(gait.dip, 0, G.DIP_RATE * dt), body2 = -G.CROUCH + G.BOB * rise - dip2;
   if (legsAllow(body.x, body.z, body.yaw, y2) && probesClear(body.x, body.z, body.yaw, gait.aimYaw, y2 + body2)) gait.gy = y2;
   if (probesClear(body.x, body.z, body.yaw, gait.aimYaw, gait.gy + body2)) { gait.dip = dip2; gait.bodyY = body2; }

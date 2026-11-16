@@ -1,0 +1,173 @@
+// A self-test of the walk on the plot's own ground: @selftest (or, while
+// mechSelfTestOnJoin() returns 1, joining the plot) drives a sprinter and
+// then a walker at full speed straight ahead from where the player stands,
+// then up the highest ground within 60 blocks, and reports each run in
+// chat: how far it went, how high it got, and every stall (full speed to a
+// stop while it is meant to be walking, not falling or kneeling) and stuck
+// stretch (no progress for a second and a half). Mechs are cleared first.
+
+/** The player the self-test reports to. */
+declare global stPlayer: str;
+/** The type the current run drives (a global, so nothing the run calls can
+ * change it). */
+declare global stKind: num;
+/** 1: the self-test prints each run's speed every second (a debugging aid). */
+declare global stTrace: num;
+
+/** 1 to run the self-test whenever someone joins the plot (for testing
+ * without anyone at the keyboard). */
+function mechSelfTestOnJoin(): num {
+    return 0;
+}
+
+/** 1 to trace a single climb (the sprinter's) instead of the full test, the
+ * speed every second. */
+function mechSelfTestTrace(): num {
+    return 0;
+}
+
+/** Tells the self-test's player `msg`. */
+function selfTestSay(msg: str) {
+    select playersByName(global stPlayer);
+    selected.sendMessage(s"<aqua>[selftest]</aqua> <white>%var(msg)");
+    select reset;
+}
+
+/** Spawns a mech of type stKind at `from` facing `yaw`, drives it at full
+ * speed for `ticks` ticks (or until it is within 3 m of `goal`, if goal is
+ * not (0, 0, 0)), and reports the run as `label` with the type it ran. */
+function selfTestRun(from: vec, yaw: num, ticks: num, goal: vec, label: str) {
+    clearMechs();
+    useType(global stKind);
+    line cols = mechDefaultColors();
+    line m = spawnMech(loc(from.x, from.y, from.z, 0, yaw), line cols[1] as num, line cols[2] as num, global stKind);
+    useMech(line m);
+    gaitDrive(line m, global gMaxSpeed, 0);
+    line origin = global mPos[line m];
+    line stalls = 0;
+    line stuck = 0;
+    line prev = 0;
+    line top = line origin.y;
+    line fastest = 0;
+    line hist = [];
+    line ran = 0;
+    line done = 0;
+    line rolling = 0;
+    repeat (line t to ticks) {
+        if (line done == 0) {
+            wait;
+            line ran += 1;
+            line sp = global gSpeed[line m];
+            line pos = global mPos[line m];
+            line busy = global gFalling[line m] == 1 || global gKneel[line m] > 0;
+            if (line prev > 1 && line sp < 0.2 && !line busy) {
+                line stalls += 1;
+                selfTestSay("  stall at tick %var(ran)");
+            }
+            line prev = line sp;
+            if (line sp > 1) {
+                line rolling = 1;
+            }
+            line fastest = num.max(line fastest, line sp);
+            line top = num.max(line top, line pos.y);
+            line hist.append(line pos);
+            if (global stTrace == 1 && line ran % 20 == 0) {
+                line ws = num.round(global gWantSpeed[line m] * 10) / 10;
+                line spd = num.round(line sp * 10) / 10;
+                line ct = global curType;
+                line mt = global mType[line m];
+                line py = num.round(line pos.y * 10) / 10;
+                selfTestSay("  t%var(ran) type %var(mt) cur %var(ct) want %var(ws) speed %var(spd) y %var(py) fall %var(busy)");
+            }
+            if (line hist.len() > 30 && !line busy && line rolling == 1) {
+                if (flatDist(line pos, line hist[line hist.len() - 30] as vec) < 0.5) {
+                    line stuck += 1;
+                }
+            }
+            if (goal.len() > 0 && flatDist(line pos, goal) < 3) {
+                line done = 1;
+            }
+        }
+    }
+    line pos = global mPos[line m];
+    line went = num.round(flatDist(line pos, line origin) * 10) / 10;
+    line rose = num.round((line top - line origin.y) * 10) / 10;
+    line fast = num.round(line fastest * 10) / 10;
+    line secs = num.round(line ran / 2) / 10;
+    line tn = mechTypeNames();
+    line ran_as = line tn[global mType[line m]] as str;
+    line msg = "%var(label) (ran a %var(ran_as)): went %var(went) m in %var(secs) s, rose %var(rose) m, top speed %var(fast) m/s, stalls %var(stalls), stuck ticks %var(stuck)";
+    selfTestSay(line msg);
+}
+
+/** The highest block top within `r` blocks of `c` (every 4 blocks), as a
+ * point on it; c itself if nothing is higher. */
+function selfTestHill(c: vec, r: num): vec {
+    line best = c;
+    line n = 0;
+    line dx = 0 - r;
+    while (line dx <= r) {
+        line dz = 0 - r;
+        while (line dz <= r) {
+            if (line dx * line dx + line dz * line dz > 64) {
+                line h = colTop(c.x + line dx, c.z + line dz, c.y + 40, 60);
+                if (line h > line best.y + 0.5) {
+                    line best = vec(c.x + line dx, line h, c.z + line dz);
+                }
+                line n += 1;
+                if (line n % 80 == 0) {
+                    wait;
+                }
+            }
+            line dz += 4;
+        }
+        line dx += 4;
+    }
+    return line best;
+}
+
+process mechSelfTest {
+    wait(3, unit="Seconds");
+    select playersByName(global stPlayer);
+    line feet = selected.location;
+    select reset;
+    line yaw: num = line feet.getCoordinate(coord="Yaw");
+    line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
+    line here = vec(line feet.x, line feet.y, line feet.z);
+    line from = line here + line F * 10;
+    selfTestSay("walk self-test: straight ahead at full speed, then up the highest ground near you");
+    line names = mechTypeNames();
+    global stTrace = mechSelfTestTrace();
+    if (global stTrace == 0) {
+        for (line k of [2, 1]) {
+            global stKind = line k as num;
+            line name = line names[global stKind] as str;
+            selfTestRun(line from, line yaw, 220, vec(0, 0, 0), "%var(name) straight");
+        }
+    }
+    line hill = selfTestHill(line here, 60);
+    line hx = num.round(line hill.x);
+    line hy = num.round(line hill.y);
+    line hz = num.round(line hill.z);
+    selfTestSay("highest ground near you: %var(hx) %var(hy) %var(hz)");
+    line d = line hill - line here;
+    line hyaw = angYZ(line d.z, 0 - line d.x);
+    line hF = vec(0 - num.sin(line hyaw), 0, num.cos(line hyaw));
+    line kinds = [2, 1];
+    if (global stTrace == 1) {
+        line kinds = [2];
+    }
+    for (line k of line kinds) {
+        global stKind = line k as num;
+        line name = line names[global stKind] as str;
+        selfTestRun(line here + line hF * 6, line hyaw, 400, line hill, "%var(name) climb");
+    }
+    clearMechs();
+    selfTestSay("done");
+}
+
+/** @selftest: runs the walk self-test from where the player stands. */
+function selfTestCommand {
+    global stPlayer = default.uuid;
+    start mechSelfTest;
+}

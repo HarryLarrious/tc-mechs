@@ -6,6 +6,11 @@ playerevent join {
     pilotHideAllFrom();
     // third person sits 15 blocks back, so a mech fits in view
     default.setMiscellaneousAttribute(15, attr="Camera distance");
+    // (the walk self-test, when it is switched on for unattended testing)
+    if (mechSelfTestOnJoin() == 1) {
+        global stPlayer = default.uuid;
+        start mechSelfTest;
+    }
 }
 
 playerevent command {
@@ -54,10 +59,13 @@ playerevent command {
             repairMech(line m);
             default.sendMessage(s"<gray>Mech %var(m) repaired.");
         }
+    } else if (line cmd == "selftest") {
+        // @selftest: drives each mech type straight ahead and up the nearest high ground, and reports stalls
+        selfTestCommand();
     } else if (line cmd == "pack") {
         packSend();
     } else {
-        default.sendMessage(s"<gray>Commands: <yellow>@mech [walker|sprinter] [turn]</yellow>, <yellow>@walk [m/s] [turn]</yellow>, <yellow>@turn [deg/s]</yellow>, <yellow>@stop</yellow>, <yellow>@follow</yellow>, <yellow>@board</yellow>, <yellow>@exit</yellow> (or F), <yellow>@pose JOINT DEGREES</yellow>, <yellow>@pose reset</yellow>, <yellow>@status</yellow>, <yellow>@damage PART AMOUNT</yellow>, <yellow>@repair</yellow>, <yellow>@clearmechs</yellow>, <yellow>@pack</yellow>");
+        default.sendMessage(s"<gray>Commands: <yellow>@mech [walker|sprinter] [turn]</yellow>, <yellow>@walk [m/s] [turn]</yellow>, <yellow>@turn [deg/s]</yellow>, <yellow>@stop</yellow>, <yellow>@follow</yellow>, <yellow>@board</yellow>, <yellow>@exit</yellow> (or F), <yellow>@pose JOINT DEGREES</yellow>, <yellow>@pose reset</yellow>, <yellow>@status</yellow>, <yellow>@damage PART AMOUNT</yellow>, <yellow>@repair</yellow>, <yellow>@clearmechs</yellow>, <yellow>@selftest</yellow>, <yellow>@pack</yellow>");
     }
 }
 
