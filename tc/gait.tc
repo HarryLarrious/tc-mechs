@@ -871,7 +871,7 @@ function gaitTick(m: num) {
         }
     }
     if (line speed == 0 && line turn == 0 && global gWantSpeed[m] == 0 && global gWantTurn[m] == 0 && line follow == "" && global mPilot[m] == "") {
-        if (line swT[1] as num < 0 && line swT[2] as num < 0 && global gDip[m] == 0 && num.abs(wrapDeg(line aimAt - line aim)) < 0.5 && line k == line kneelTo && global mHatch[m] == global mHatchTo[m] && global mBoard[m] == 0 && line gunsLevel == 1) {
+        if (line swT[1] as num < 0 && line swT[2] as num < 0 && global gDip[m] == 0 && num.abs(wrapDeg(line aimAt - line aim)) < 0.5 && line k == line kneelTo && global mHatch[m] == global mHatchTo[m] && global mBoard[m] == 0 && line gunsLevel == 1 && global mSpinV[m] == 0) {
             line still = 1;
         }
     }
@@ -918,6 +918,7 @@ process mechLoop {
                 }
                 if (global gWalking[line m] == 1) {
                     gaitTick(line m);
+                    weaponsTick(line m);
                     mechRender(line m, 1);
                 }
             }

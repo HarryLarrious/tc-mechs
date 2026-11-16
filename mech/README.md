@@ -349,6 +349,8 @@ and "Get out" buttons play the same timeline.
 | W / S | Walk forward (full speed) / back (half speed) |
 | A / D | Turn left / right on the legs |
 | Look around | The turret turns toward where you look, at 60°/s, and all four guns tilt to your pitch |
+| Right click (hold) | Heavy rotary cannons: the barrels spin up, then both fire while you hold |
+| Left click | A burst from the two light machine guns on the roof |
 | F | Get out (`@exit` too) |
 | Shift | Nothing: dismounting is cancelled, so you can't fall out by accident |
 
@@ -356,7 +358,27 @@ The walk, the terrain and gravity all apply as before. The legs carry the
 body where you steer, and the turret aims on its own, so you can walk one way
 while watching another. A piloted mech never goes idle. The action bar shows
 speed, heading, how far the turret lags behind your aim, the last landing's
-impact speed, and plot CPU.
+impact speed, the cannons' spin, and plot CPU.
+
+### Firing
+
+`tc/weapons.tc`. Each gun fires from its muzzle (`mechMuzzles()`, from
+`muzzles()` in `pack/src/mech_torso.py`) along its barrel: +Z of its
+elevation segment. So rounds go where the guns point, which lags your aim
+while the turret turns.
+
+| Gun | Trigger | Rate | Damage per round |
+| --- | --- | --- | --- |
+| Heavy rotary cannons (both sides) | Hold right click. The barrel clusters spin up to 40°/tick in about half a second and fire from 30°/tick, then spin down when you let go | Both every other tick | 6 |
+| Light machine guns (roof) | Left click: a 10-tick burst | Both every other tick | 2 |
+
+A round is hitscan: a ray up to 120 m to the first solid block or entity,
+with a little spread. The entity nearest the impact takes the damage if the
+impact is on its body and it isn't the pilot. Everyone sees an electric-spark
+tracer and muzzle smoke. A heavy round explodes on impact (particles and
+sound, no block damage); a light round throws sparks. The action bar shows
+the cannons' spin. Holding right click repeats the click every 4 ticks, so
+the trigger counts as held for 6 ticks after each one.
 
 ### Pilot model
 
@@ -395,6 +417,61 @@ keeps the ankles flat. "Turret sweep" swings the torso and aims the guns, and
 "Spin barrels" turns the heavy barrel clusters. "Parked (kneel)" blends the
 mech down on one knee and back, "Hatch open" opens the roof hatch, and a
 posed pilot figure sits in the chair. "Board" and "Get out" play the climb.
+
+## Animation editor
+
+`tools/animator/` is an editor for the pilot's animations. Run
+`python3 tools/animator/serve.py` and open
+<http://127.0.0.1:8767/tools/animator/>. It shows the mech kneeling with its
+turret ahead and its hatch open, and the pilot figure drawn the same way as
+in game.
+
+The figure is a rig like Roblox's. The body moves and turns, and the four
+limbs are rigid parts that keep their length. Each limb turns and rolls at
+its joint, and can be moved off its socket (the shoulder or hip). A key has
+a time from the key before, a note, and a pose:
+
+- the hips' center,
+- the lean (degrees, + forward),
+- the facing (0 is the mech's front, 90 its left, 180 toward its back),
+- each limb's direction, roll (degrees about its length) and offset off
+  its socket, all in the body frame, so the limbs move and turn with the
+  body.
+
+Points are in the mech frame at rest. The panel shows heights above the
+kneeling mech's ground.
+
+| Do | How |
+| --- | --- |
+| Select a part | Click it on the figure, use the buttons, or press `1` (body) to `5` (right leg) |
+| Rotate or move | `R` rotate, `G` move: the gizmo for the selected part |
+| Turn and roll a limb | In rotate mode drag its rings at the joint, or set Forward (swing ahead), Out (swing away from the body) and Roll (twist about its length) |
+| Move a limb off its socket | In move mode drag its arrows, or type its offset (left, up, forward); "Back in its socket" undoes it |
+| Move or turn the body | Select the body: move or rotate (lean and facing), or type the hips and use the sliders |
+| Aim a limb at a spot | In rotate mode `Shift`+click the mech or the ground: it says how far out of reach the spot is |
+| Put a limb's end on a spot | In move mode `Shift`+click: moves the limb off its socket so its hand or foot lands there |
+| Reach a spot | `Ctrl`+`Shift`+click: moves the whole body so the selected limb's hand or foot lands there |
+| Stand somewhere | With the body selected, `Shift`+click the spot |
+| Keys | "+ Key after" (`N`) copies this key after it; Delete; ↑ ↓ reorder; `←` `→` step through them |
+| Play | `Space`, the scrub bar, speed, loop, and Backwards to see getting out |
+| Undo | `Ctrl+Z`, `Ctrl+Shift+Z` |
+| Save | `Ctrl+S` saves a draft to `tools/animator/drafts/<name>.json`; Download gives the file |
+
+"Open" loads the game's animations (`mech/animations/`) or a draft. Opening a
+game animation names the copy `<name>-draft`, so saving it never overwrites
+the game's file. Animations made before the rig (hand and foot points)
+open with each limb pointing the same way. Ghosts of the keys before and
+after and the hips' path help with the timing. The work in progress is kept
+in the browser between visits.
+
+Drafts are rough. They are polished and then copied into
+`mech/animations/<name>.json`, which `pack/src/mech_pilot.py` bakes into the
+game. It reads both formats: rig keys are eased with each limb turning along
+the arc between its directions (offsets and rolls move straight), and come
+out with every limb at its exact length. Each timeline sample gives the
+game every limb's joint, end and roll, so it draws limbs off their sockets
+and rolled just as the editor does. A key marked "Chair pose" takes the seated pose from the cockpit's
+geometry when baked.
 
 ## Not done yet
 

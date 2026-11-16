@@ -1,0 +1,196 @@
+// Weapons: the pilot fires the mech's guns.
+//
+// Right click (hold): the two heavy rotary cannons. Their barrel clusters
+// spin up (mSpinV, degrees per tick, shown by the "spin_z" barrels) and fire
+// once spun up, every other tick while the trigger is held; let go and they
+// spin down. Holding right click repeats the click every 4 ticks, so the
+// trigger stays held for a few ticks after each one.
+// Left click: a burst from the two light machine guns on the roof.
+//
+// A round leaves its gun's muzzle (mechMuzzles) along the barrel: +Z of the
+// gun's elevation segment, so it goes where the gun points (the turret lags
+// the pilot's aim). It is hitscan: a ray to the first solid block or entity
+// within weaponRange(), with a little spread; a mob or player (not the pilot)
+// it hits takes the round's damage. Tracers, muzzle smoke, impact effects and
+// sounds are shown to everyone.
+
+/** Per mech: ticks the heavy trigger stays held, ticks of light burst left,
+ * the heavy barrels' spin (degrees per tick) and a tick counter (rate of
+ * fire). */
+declare global mTrigH: list[num];
+declare global mTrigL: list[num];
+declare global mSpinV: list[num];
+declare global mShotT: list[num];
+/** Parsed mechMuzzles: per gun [1 heavy or 0 light, segment index, muzzle]. */
+declare global wGuns: list;
+declare global wLoaded: num;
+
+/** Range (m); the heavy barrels' top spin and the spin they fire from
+ * (degrees per tick), and how fast they spin up and down. */
+function weaponRange(): num {
+    return 120;
+}
+
+function spinMax(): num {
+    return 40;
+}
+
+function spinFire(): num {
+    return 30;
+}
+
+/** Damage per round: heavy, light. */
+function heavyDamage(): num {
+    return 6;
+}
+
+function lightDamage(): num {
+    return 2;
+}
+
+/** Parses the guns once per data version. */
+function loadWeapons {
+    if (global wLoaded == mechDataVersion()) {
+        return;
+    }
+    loadMechData();
+    global wGuns = [];
+    for (line g of mechMuzzles()) {
+        line gl = line g as list;
+        line heavy = 0;
+        if (line gl[1] as str == "heavy") {
+            line heavy = 1;
+        }
+        global wGuns.append([line heavy, mechJointSeg(line gl[2] as str), line gl[3]]);
+    }
+    global wLoaded = mechDataVersion();
+}
+
+/** Sets up the weapon state of a newly spawned mech. */
+function weaponsInit {
+    global mTrigH.append(0);
+    global mTrigL.append(0);
+    global mSpinV.append(0);
+    global mShotT.append(0);
+}
+
+/** Empties the weapon lists (with clearMechs). */
+function weaponsClear {
+    global mTrigH = [];
+    global mTrigL = [];
+    global mSpinV = [];
+    global mShotT = [];
+}
+
+/** One tick of mech m's guns (mechLoop, after the walk, before drawing):
+ * spins the heavy barrels up or down and fires what the pilot holds. */
+function weaponsTick(m: num) {
+    line armed = global mPilot[m] != "" && global mBoard[m] == 0;
+    line v = global mSpinV[m];
+    if (line armed && global mTrigH[m] > 0) {
+        line v = num.min(spinMax(), line v + 2.5);
+        global mTrigH[m] -= 1;
+    } else {
+        line v = num.max(0, line v - 1.5);
+        global mTrigH[m] = 0;
+    }
+    global mSpinV[m] = line v;
+    if (line v > 0) {
+        global mSpin[m] = num.wrap(global mSpin[m] + line v, 0, 360);
+    }
+    if (!line armed) {
+        global mTrigL[m] = 0;
+        return;
+    }
+    global mShotT[m] += 1;
+    line even = global mShotT[m] % 2 == 0;
+    line fireH = line v >= spinFire() && global mTrigH[m] > 0 && line even;
+    line fireL = global mTrigL[m] > 0 && !line even;
+    if (global mTrigL[m] > 0) {
+        global mTrigL[m] -= 1;
+    }
+    if (!line fireH && !line fireL) {
+        return;
+    }
+    loadWeapons();
+    line yaw = global mYaw[m];
+    line F = vec(0 - num.sin(line yaw), 0, num.cos(line yaw));
+    line U = vec(0, 1, 0);
+    line W = [line U.cross(line F), line U, line F];
+    line segs = mechSegments(m);
+    line o = global mPos[m] + vec(0, global gBodyY[m], 0);
+    for (line g of global wGuns) {
+        line gl = line g as list;
+        line heavy = line gl[1] as num;
+        if ((line heavy == 1 && line fireH) || (line heavy == 0 && line fireL)) {
+            line S = line segs[line gl[2] as num] as list;
+            line muzzle = rotApply(line W, rotApply(line S, line gl[3] as vec) + (line S[4] as vec)) + line o;
+            line dir = rotApply(line W, line S[3] as vec);
+            fireRound(m, line heavy, line muzzle, line dir);
+        }
+    }
+}
+
+/** Fires one round of mech m's gun (heavy 1 or light 0) from `from` along
+ * `dir` (world): to the first solid block, hurting what it passes through. */
+function fireRound(m: num, heavy: num, from: vec, dir: vec) {
+    line spread = 0.022;
+    line dmg = lightDamage();
+    if (heavy == 1) {
+        line spread = 0.012;
+        line dmg = heavyDamage();
+    }
+    line d = (dir + vec(num.randomd(0 - line spread, line spread), num.randomd(0 - line spread, line spread), num.randomd(0 - line spread, line spread))).setLength(1);
+    line shot = loc(from.x, from.y, from.z).setDirection(line d);
+    line hit = game.raycast(line shot, weaponRange(), entityCollision="True", blockCollision="Solid blocks");
+    line dist = (vec(line hit.x, line hit.y, line hit.z) - from).len();
+    // what it hit: the entity nearest the impact, if the impact is on its
+    // body (within 1.5 m of it sideways, from its feet to 3 m up), and not
+    // the pilot
+    select allEntities;
+    filter byDistance(line hit, 1);
+    line who = selectedEntity.uuid;
+    line at = selectedEntity.location;
+    select reset;
+    if (line who != "" && line who != global mPilot[m]) {
+        line side = ((vec(line at.x, 0, line at.z) - vec(line hit.x, 0, line hit.z))).len();
+        if (line side < 1.5 && line hit.y >= line at.y - 0.5 && line hit.y <= line at.y + 3) {
+            select playersByName(line who);
+            selected.damage(line dmg, global mPilot[m]);
+            select reset;
+            select entitiesByName(line who);
+            selectedEntity.damage(line dmg);
+            select reset;
+        }
+    }
+    // tracer, muzzle and impact
+    allPlayers.displayParticleLine(par("Electric Spark"), line shot, line hit, 1.5);
+    allPlayers.displayParticleEffect(par("Large Smoke"), line shot);
+    line struck = line dist < weaponRange() - 0.5;
+    if (heavy == 1) {
+        allPlayers.playSound(snd("Firework Large Blast", 2, 0.55), line shot);
+        if (line struck) {
+            allPlayers.displayParticleEffect(par("Explosion"), line hit);
+            allPlayers.playSound(snd("Explode", 0.7, 1.6), line hit);
+        }
+    } else {
+        allPlayers.playSound(snd("Firework Blast", 1.2, 1.7), line shot);
+        if (line struck) {
+            allPlayers.displayParticleEffect(par("Critical Hit"), line hit);
+        }
+    }
+}
+
+playerevent rightClick {
+    line m = mechOfPilot(default.uuid);
+    if (line m != 0 && global mBoard[line m] == 0) {
+        global mTrigH[line m] = 6;
+    }
+}
+
+playerevent leftClick {
+    line m = mechOfPilot(default.uuid);
+    if (line m != 0 && global mBoard[line m] == 0) {
+        global mTrigL[line m] = 10;
+    }
+}

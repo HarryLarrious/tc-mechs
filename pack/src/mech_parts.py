@@ -57,8 +57,8 @@ from mech_lib import (GAIT, MATERIALS, MODEL_SCALE, NS, ROOT, TINTS, Elem, Part,
                       KNEEL_POSE, MECH_SCALE, PROBES, gait_scaled, mirror_x, no_dent, plate, prism, ring_x, scale_part, to_local,
                       write_models, write_textures)
 from mech_pelvis import pelvis_parts  # noqa: E402
-from mech_torso import (EYE as PILOT_EYE, FLOOR_Y, HATCH_HALF, HATCH_Z, HIPS_Z,  # noqa: E402
-                        RECLINE, ROOF_Y, SEAT, pilot_grips, torso_parts)  # noqa: E402
+from mech_torso import (EYE as PILOT_EYE, HATCH_Z, HIPS_Z, RECLINE, ROOF_Y, SEAT,  # noqa: E402
+                        muzzles, pilot_grips, torso_parts)  # noqa: E402
 from mech_pilot import board_timeline, write_pilot  # noqa: E402
 
 HIP_X = 0.75      # hip joint offset from the centerline (mech frame, before MECH_SCALE)
@@ -592,13 +592,9 @@ def rest_cols(rest) -> list[float]:
 
 
 def board_path() -> list:
-    """The boarding timeline (mech_pilot.py) for this mech's front leg and cabin."""
+    """The boarding timeline (mech_pilot.py, from mech/animations/board.json)."""
     k = MECH_SCALE
-    geom = {"ground": GAIT["kneel_drop"] * k, "roof": 4.86 * k,
-            "hole": ((HATCH_Z - HATCH_HALF) * k, (HATCH_Z + HATCH_HALF) * k), "hole_x": HATCH_HALF * k,
-            "floor": FLOOR_Y * k}
-    return board_timeline(geom, tuple(c * k for c in SEAT), RECLINE, HIPS_Z,
-                          [tuple(c * k for c in g) for g in pilot_grips()])
+    return board_timeline(tuple(c * k for c in SEAT), RECLINE, HIPS_Z, [tuple(c * k for c in g) for g in pilot_grips()])
 
 
 def write_tc_data(spec) -> None:
@@ -661,6 +657,12 @@ def write_tc_data(spec) -> None:
         " * boarding drops the pilot in through it. */\n"
         "function mechHatchCenter(): vec {\n    return vec(0, "
         + tc_num(ROOF_Y * MECH_SCALE) + ", " + tc_num(HATCH_Z * MECH_SCALE) + ");\n}\n\n"
+        "/** The guns: [kind (heavy or light), the elevation joint that aims it, its\n"
+        " * muzzle in the mech frame at rest (m)]. Rounds leave along +Z of that\n"
+        " * joint's segment. */\n"
+        "function mechMuzzles(): list {\n    return ["
+        + ", ".join(f'["{kind}", "{joint}", vec({", ".join(tc_num(c * MECH_SCALE) for c in pt)})]' for kind, joint, pt in muzzles())
+        + "];\n}\n\n"
         "/** The pilot's seat: the top center of the chair's seat in the mech frame\n"
         " * at rest (it turns with the torso). A rider's eyes are 1.03 m above it. */\n"
         "function mechCockpitSeat(): vec {\n    return vec("

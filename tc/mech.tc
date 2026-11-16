@@ -68,7 +68,7 @@ declare global mechLoaded: num;
 
 /** The parsed data's current version. */
 function mechDataVersion(): num {
-    return 9;
+    return 10;
 }
 
 /** Parses the generated data once. */
@@ -299,6 +299,7 @@ function spawnMech(at: loc, paint: num, accent: num): num {
     global mBody.append([]);
     global mHatch.append(0);
     global mHatchTo.append(0);
+    weaponsInit();
     gaitInit(global mechCount);
     mechRender(global mechCount);
     ensureMechLoop();
@@ -352,6 +353,7 @@ function clearMechs {
     global mAll = [];
     global mGroupIds = [];
     gaitClear();
+    weaponsClear();
     global mPos = [];
     global mYaw = [];
     global mJoint = [];

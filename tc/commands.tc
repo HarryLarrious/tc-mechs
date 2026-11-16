@@ -4,6 +4,8 @@
 playerevent join {
     packSend();
     pilotHideAllFrom();
+    // third person sits 15 blocks back, so a mech fits in view
+    default.setMiscellaneousAttribute(15, attr="Camera distance");
 }
 
 playerevent command {

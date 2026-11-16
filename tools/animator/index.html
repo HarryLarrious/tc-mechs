@@ -1,0 +1,792 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mech Animator</title>
+<style>
+  :root { --bg:#14161a; --panel:#1d2026; --line:#2c3038; --text:#e6e8ec; --dim:#8b93a1; --hi:#f0b429; --sel:#272b33; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.4 system-ui, sans-serif; display:flex; height:100vh; overflow:hidden; }
+  #view { flex:1; position:relative; min-width:0; }
+  canvas { display:block; }
+  #hud { position:absolute; left:12px; top:10px; color:var(--dim); pointer-events:none; max-width:70%; }
+  #toast { position:absolute; left:50%; bottom:16px; transform:translateX(-50%); background:#2a2e36; border:1px solid var(--line); border-radius:6px; padding:6px 12px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  #toast.on { opacity:1; }
+  #side { width:380px; background:var(--panel); border-left:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
+  .sec { padding:10px 12px; border-bottom:1px solid var(--line); display:grid; gap:7px; }
+  .sec h3 { margin:0; font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; font-weight:600; }
+  .line { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .line label { display:flex; align-items:center; gap:5px; }
+  label.line { display:flex; }
+  label.line > span:first-child { width:62px; color:var(--dim); }
+  input, select, button { font:inherit; color:var(--text); }
+  input[type=text], input[type=number], select { background:#14161a; border:1px solid var(--line); border-radius:4px; padding:3px 6px; }
+  input[type=number] { width:68px; }
+  input[type=range] { flex:1; min-width:80px; }
+  button { background:#2a2e36; border:1px solid var(--line); border-radius:4px; padding:4px 8px; cursor:pointer; }
+  button:hover { border-color:#4a505c; }
+  button.on { border-color:var(--hi); color:var(--hi); }
+  #keys { overflow:auto; flex:1; min-height:120px; }
+  .key { display:grid; grid-template-columns:28px 64px 1fr; gap:6px; align-items:center; padding:3px 12px; cursor:pointer; border-left:3px solid transparent; }
+  .key:hover { background:#22262d; }
+  .key.sel { background:var(--sel); border-left-color:var(--hi); }
+  .key .i { color:var(--dim); font-variant-numeric:tabular-nums; }
+  .key input[type=number], .key input[type=text] { width:100%; }
+  .key.seated .i::after { content:"★"; color:var(--hi); margin-left:2px; }
+  .parts button { min-width:58px; }
+  .xyz { display:grid; grid-template-columns:auto 1fr 1fr 1fr; gap:4px 6px; align-items:center; }
+  .xyz input { width:100%; }
+  .dim { color:var(--dim); }
+  #time { font-variant-numeric:tabular-nums; color:var(--dim); min-width:92px; text-align:right; }
+  kbd { background:#2a2e36; border:1px solid var(--line); border-radius:3px; padding:0 4px; font:11px ui-monospace, monospace; }
+  .hide { display:none !important; }
+</style>
+</head>
+<body>
+<div id="view">
+  <div id="hud">Drag to orbit. Click a body part (or press <kbd>1</kbd>–<kbd>5</kbd>). <kbd>R</kbd> rotate it (a limb turns and rolls at its joint), <kbd>G</kbd> move it (a limb comes off its socket). <kbd>Shift</kbd>+click the mech: aim the selected limb there, or in move mode put its end there (the body: stand there). <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+click: move the body so that limb's end lands there.</div>
+  <div id="toast"></div>
+</div>
+<div id="side">
+  <div class="sec">
+    <div class="line">
+      <input id="name" type="text" placeholder="draft name" style="flex:1" title="Name of the draft (letters, digits, - and _)">
+      <select id="open" title="Open an animation"><option value="">Open…</option></select>
+    </div>
+    <div class="line">
+      <button id="save" title="Save to tools/animator/drafts (Ctrl+S)">Save draft</button>
+      <button id="download">Download</button>
+      <button id="undo" title="Ctrl+Z">Undo</button>
+      <button id="redo" title="Ctrl+Shift+Z">Redo</button>
+    </div>
+  </div>
+  <div class="sec">
+    <h3>Playback</h3>
+    <div class="line">
+      <button id="play" title="Space">▶ Play</button>
+      <input id="scrub" type="range" min="0" max="1" step="0.001" value="0">
+      <span id="time">0.00 / 0.00 s</span>
+    </div>
+    <div class="line">
+      <label>Speed <select id="speed"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option></select></label>
+      <label><input id="loop" type="checkbox" checked> Loop</label>
+      <label><input id="reverse" type="checkbox"> Backwards (getting out)</label>
+    </div>
+  </div>
+  <div class="sec">
+    <h3>Keys</h3>
+    <div class="line">
+      <button id="addKey" title="Copy of this key after it (N)">+ Key after</button>
+      <button id="delKey" title="Delete">Delete</button>
+      <button id="upKey">↑</button>
+      <button id="downKey">↓</button>
+      <span class="dim">time (s) from the key before</span>
+    </div>
+  </div>
+  <div id="keys"></div>
+  <div class="sec">
+    <h3>Pose of key <span id="keyNo">1</span></h3>
+    <div class="line parts" id="partBtns"></div>
+    <div class="line"><span class="dim">Gizmo</span><button id="modeMove" title="G">Move</button><button id="modeRotate" title="R">Rotate</button></div>
+    <div id="bodyPanel" style="display:grid; gap:7px">
+      <div class="xyz">
+        <span></span><span class="dim">x (left)</span><span class="dim">height</span><span class="dim">z (forward)</span>
+        <span>Hips</span>
+        <input id="hx" type="number" step="0.05"><input id="hy" type="number" step="0.05"><input id="hz" type="number" step="0.05">
+      </div>
+      <label class="line"><span>Lean</span><input id="lean" type="range" min="-90" max="90" step="1"><input id="leanN" type="number" step="1"></label>
+      <label class="line"><span>Facing</span><input id="yaw" type="range" min="-180" max="360" step="1"><input id="yawN" type="number" step="5"></label>
+      <div class="line dim">Facing: 0 = the mech's front, 90 = its left, 180 = toward its back. Lean: + forward.</div>
+    </div>
+    <div id="limbPanel" style="display:grid; gap:7px">
+      <label class="line"><span>Forward</span><input id="fwd" type="range" min="-180" max="180" step="1"><input id="fwdN" type="number" step="5"></label>
+      <label class="line"><span>Out</span><input id="out" type="range" min="-90" max="90" step="1"><input id="outN" type="number" step="5"></label>
+      <label class="line"><span>Roll</span><input id="roll" type="range" min="-180" max="180" step="1"><input id="rollN" type="number" step="5"></label>
+      <div class="line dim">0, 0 hangs straight down. Forward swings it ahead (90 points ahead, 180 straight up); Out swings it away from the body; Roll twists it about its length.</div>
+      <div class="xyz">
+        <span></span><span class="dim">left</span><span class="dim">up</span><span class="dim">forward</span>
+        <span>Off socket</span>
+        <input id="ox" type="number" step="0.05"><input id="oy" type="number" step="0.05"><input id="oz" type="number" step="0.05">
+      </div>
+      <div class="line"><button id="resetOff">Back in its socket</button><span class="dim" id="limbInfo"></span></div>
+    </div>
+    <div class="line">
+      <label><input id="seated" type="checkbox"> Chair pose (replaced by the seated pose when baked)</label>
+    </div>
+  </div>
+  <div class="sec">
+    <h3>View</h3>
+    <div class="line">
+      <label><input id="xray" type="checkbox"> See-through mech</label>
+      <label><input id="onion" type="checkbox" checked> Ghosts of the keys before and after</label>
+      <label><input id="trail" type="checkbox" checked> Hip path</label>
+      <label><input id="hatch" type="checkbox" checked> Hatch open</label>
+      <button id="focus" title="F">Focus figure</button>
+    </div>
+  </div>
+</div>
+<script src="../viewer/mech_data.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+// The animation editor: rough out a pilot animation on the kneeling mech.
+//
+// The figure is posed like a Roblox rig: the body (hips, lean, facing) and
+// four rigid limbs that turn at their joints (shoulders, hips) and keep their
+// length. A key is the time from the key before (dt, seconds), a note, the
+// hips' center, the lean (degrees, + forward, about the body's left), the
+// facing (yaw, degrees: 0 faces the mech's front +Z, 90 faces +X, its left),
+// and each limb's direction in the body frame (left, up, forward; (0, -1, 0)
+// hangs straight down). Points are in the mech frame at rest (+X left, +Y up,
+// +Z forward, meters) with the mech kneeling: its ground is at y = doc.ground,
+// and the panel shows heights above it. Between keys the pose eases
+// (smoothstep): the body moves straight, each limb turns along the arc
+// between its directions, as pack/src/mech_pilot.py bakes it. The game draws
+// the same figure (tc/pilot.tc).
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { TransformControls } from "three/addons/controls/TransformControls.js";
+
+const MECH = window.MECH, spec = MECH.spec;
+const PX = 0.05625;                     // one skin pixel (m)
+const HIP_H = 12 * PX;                  // hips above the soles, standing
+const PARTS = [["body", "Body"], ["arm_l", "L arm"], ["arm_r", "R arm"], ["leg_l", "L leg"], ["leg_r", "R leg"]];
+const LIMBS = { arm_l: { len: 10 * PX, side: 1, end: "hand" }, arm_r: { len: 10 * PX, side: -1, end: "hand" },
+                leg_l: { len: 12 * PX, side: 1, end: "sole" }, leg_r: { len: 12 * PX, side: -1, end: "sole" } };
+const rad = d => d * Math.PI / 180, deg = r => r * 180 / Math.PI;
+const $ = id => document.getElementById(id);
+const r3 = v => Math.round(v * 1000) / 1000;
+
+// ---------------------------------------------------------------- scene
+const view = $("view");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+view.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14161a);
+const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 300);
+const controls = new OrbitControls(camera, renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x404040, 1.5));
+const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(4, 12, 5); scene.add(sun);
+const fill = new THREE.DirectionalLight(0xaabbff, 0.5); fill.position.set(-5, 4, -3); scene.add(fill);
+
+// the mech, kneeling with its turret ahead, in the mech frame at rest
+const loader = new THREE.TextureLoader();
+const tex = {};
+for (const [k, v] of Object.entries(MECH.textures)) {
+  const t = loader.load(v); t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
+  t.colorSpace = THREE.SRGBColorSpace; tex[k] = t;
+}
+const tints = spec.tint_defaults.map(c => new THREE.Color(c));
+const mechMats = [];
+const matCache = new Map();
+function material(texName, tint, emit) {
+  const key = texName + "|" + tint + "|" + emit;
+  if (matCache.has(key)) return matCache.get(key);
+  const m = new THREE.MeshLambertMaterial({ map: tex[texName], alphaTest: 0.1 });
+  if (emit) { m.emissive = new THREE.Color(0xffffff); m.emissiveMap = tex[texName]; m.emissiveIntensity = 0.9; }
+  if (tint !== undefined) m.color = tints[tint];
+  matCache.set(key, m); mechMats.push(m);
+  return m;
+}
+const FACE_ORDER = ["east", "west", "up", "down", "south", "north"];
+const S = 1 / (16 * spec.model_scale);
+const hidden = new THREE.MeshBasicMaterial({ visible: false });
+function buildModel(model) {
+  const g = new THREE.Group();
+  for (const el of model.elements) {
+    const size = [0, 1, 2].map(i => Math.max((el.to[i] - el.from[i]) * S, 0.0005));
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), FACE_ORDER.map(f => {
+      const face = el.faces[f];
+      return face ? material(face.texture.slice(1), face.tintindex, el.light_emission) : hidden;
+    }));
+    const c = [0, 1, 2].map(i => ((el.from[i] + el.to[i]) / 2 - 8) * S);
+    if (el.rotation) {
+      const o = el.rotation.origin.map(v => (v - 8) * S);
+      const piv = new THREE.Group(); piv.position.set(...o);
+      const r = el.rotation;
+      piv.rotation.set(rad(r.x || 0), rad(r.y || 0), rad(r.z || 0), "ZYX");
+      mesh.position.set(c[0] - o[0], c[1] - o[1], c[2] - o[2]);
+      piv.add(mesh); g.add(piv);
+    } else { mesh.position.set(...c); g.add(mesh); }
+  }
+  return g;
+}
+const pose = {};
+for (const j in spec.joints) pose[j] = 0;
+Object.assign(pose, spec.kneel_pose);
+let hatchAngle = -110;
+function rotAbout(p, d, axis) {
+  const t = new THREE.Matrix4().makeTranslation(p[0], p[1], p[2]);
+  const r = axis === "y" ? new THREE.Matrix4().makeRotationY(rad(d)) : new THREE.Matrix4().makeRotationX(rad(d));
+  return t.multiply(r).multiply(new THREE.Matrix4().makeTranslation(-p[0], -p[1], -p[2]));
+}
+function segMatrices() {
+  const out = { pelvis: new THREE.Matrix4() };
+  for (const [j, J] of Object.entries(spec.joints)) out[J.child] = out[J.parent].clone().multiply(rotAbout(J.pivot, pose[j], J.axis));
+  return out;
+}
+const UP = new THREE.Vector3(0, 1, 0);
+const mech = new THREE.Group(); scene.add(mech);
+const parts = [];
+for (const p of spec.parts) {
+  const holder = new THREE.Group(); holder.matrixAutoUpdate = false;
+  holder.add(buildModel(MECH.models[p.id]));
+  holder.traverse(o => { if (o.isMesh) o.userData.part = p.id; });
+  mech.add(holder);
+  const rest = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(...p.rest.map(rad), "ZYX")).setPosition(...p.pivot);
+  parts.push({ p, holder, rest });
+}
+function placeMech() {
+  const segs = segMatrices();
+  for (const { p, holder, rest } of parts) {
+    let m;
+    if (p.anim === "aim") {
+      const a = new THREE.Vector3(...p.pivot).applyMatrix4(segs[p.segment]);
+      const b = new THREE.Vector3(...p.links.to).applyMatrix4(segs[p.links.to_segment]);
+      m = new THREE.Matrix4().compose(a, new THREE.Quaternion().setFromUnitVectors(UP, b.sub(a).normalize()), new THREE.Vector3(1, 1, 1));
+    } else {
+      m = segs[p.segment].clone().multiply(rest);
+      if (p.anim === "hinge_x") m.multiply(new THREE.Matrix4().makeRotationX(rad(hatchAngle)));
+    }
+    holder.matrix.copy(m); holder.matrixWorldNeedsUpdate = true;
+  }
+}
+const mechMeshes = [];
+mech.traverse(o => { if (o.isMesh) mechMeshes.push(o); });
+
+// ---------------------------------------------------------------- the rig
+const V = (a) => new THREE.Vector3(a[0], a[1], a[2]);
+function bodyAxes(lean, yaw) {
+  const a = rad(lean), y = rad(yaw), cy = Math.cos(y), sy = Math.sin(y), ca = Math.cos(a), sa = Math.sin(a);
+  return [new THREE.Vector3(cy, 0, -sy), new THREE.Vector3(sa * sy, ca, sa * cy), new THREE.Vector3(ca * sy, -sa, ca * cy)];
+}
+const bodyQuat = (lean, yaw) => new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(lean), rad(yaw), 0, "YXZ"));
+const toWorld = (d, ax) => ax[0].clone().multiplyScalar(d[0]).add(ax[1].clone().multiplyScalar(d[1])).add(ax[2].clone().multiplyScalar(d[2]));
+const toLocal = (w, ax) => [w.dot(ax[0]), w.dot(ax[1]), w.dot(ax[2])];
+// where each limb's joint sits with no offset
+function sockets(hips, ax) {
+  const H = V(hips), sh = H.clone().add(ax[1].clone().multiplyScalar(10 * PX));
+  return { arm_l: sh.clone().add(ax[0].clone().multiplyScalar(6 * PX)), arm_r: sh.clone().add(ax[0].clone().multiplyScalar(-6 * PX)),
+           leg_l: H.clone().add(ax[0].clone().multiplyScalar(2 * PX)), leg_r: H.clone().add(ax[0].clone().multiplyScalar(-2 * PX)) };
+}
+// a limb's offset off its socket (body frame, m) and its roll (degrees)
+const offOf = (k, n) => (k.off && k.off[n]) || [0, 0, 0];
+const rollOf = (k, n) => (k.roll && k.roll[n]) || 0;
+function setOff(k, n, v) {
+  k.off = k.off || {};
+  if (Math.hypot(...v) < 1e-4) delete k.off[n]; else k.off[n] = v.map(r3);
+  if (!Object.keys(k.off).length) delete k.off;
+}
+function setRoll(k, n, r) {
+  k.roll = k.roll || {};
+  r = ((r + 540) % 360) - 180;
+  if (Math.abs(r) < 0.05) delete k.roll[n]; else k.roll[n] = Math.round(r * 10) / 10;
+  if (!Object.keys(k.roll).length) delete k.roll;
+}
+// each limb's joint for pose k (its socket moved by its offset)
+function pivots(k, ax) {
+  const s = sockets(k.hips, ax);
+  for (const n in LIMBS) s[n].add(toWorld(offOf(k, n), ax));
+  return s;
+}
+// a limb's axes (left, up, forward): turned the least way from hanging
+// straight down to hanging along b, in the body frame
+// ...then twisted by `roll` degrees about its up (as tc/pilot.tc does)
+function limbAxes(b, ax, roll = 0) {
+  const [x, y, z] = toLocal(b, ax);
+  const q = Math.max(1 - y, 0.02);
+  const f = new THREE.Vector3(-x * z / q, z, 1 - z * z / q).normalize();
+  const u = new THREE.Vector3(-x, -y, -z);
+  const l = u.clone().cross(f);
+  const L = toWorld(l.toArray(), ax), U = toWorld(u.toArray(), ax), F = toWorld(f.toArray(), ax);
+  const c = Math.cos(rad(roll)), sn = Math.sin(rad(roll));
+  return [L.clone().multiplyScalar(c).sub(F.clone().multiplyScalar(sn)), U, F.clone().multiplyScalar(c).add(L.clone().multiplyScalar(sn))];
+}
+const limbEnd = (k, name) => { const ax = bodyAxes(k.lean, k.yaw); return pivots(k, ax)[name].add(toWorld(norm(k[name]), ax).multiplyScalar(LIMBS[name].len)); };
+const norm = d => { const l = Math.hypot(d[0], d[1], d[2]) || 1; return [d[0] / l, d[1] / l, d[2] / l]; };
+
+function makeFigure(opacity) {
+  const transparent = opacity < 1;
+  const g = new THREE.Group();
+  const boxes = [0xd9a066, 0x3d7bd9, 0x3d7bd9, 0x3d7bd9, 0x2b3a67, 0x2b3a67].map((c, i) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: c, transparent, opacity, depthWrite: !transparent }));
+    m.matrixAutoUpdate = false; m.userData.box = i; g.add(m); return m;
+  });
+  const face = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.18, 0.04), new THREE.MeshLambertMaterial({ color: 0x222222, transparent, opacity }));
+  face.position.set(0, 0.08, 0.52); boxes[0].add(face);
+  scene.add(g);
+  return { g, boxes };
+}
+function setBox(m, l, u, f, sx, sy, sz, c) {
+  m.matrix.makeBasis(l.clone().multiplyScalar(sx * PX), u.clone().multiplyScalar(sy * PX), f.clone().multiplyScalar(sz * PX)).setPosition(c);
+  m.matrixWorldNeedsUpdate = true;
+}
+// head, torso, right arm, left arm, right leg, left leg
+const BOX_PART = ["body", "body", "arm_r", "arm_l", "leg_r", "leg_l"];
+function poseFigure(fig, k) {
+  const b = fig.boxes, ax = bodyAxes(k.lean, k.yaw), [tl, tu, tf] = ax, H = V(k.hips);
+  const neck = H.clone().add(tu.clone().multiplyScalar(12 * PX));
+  setBox(b[0], tl, tu, tf, 8, 8, 8, neck.clone().add(tu.clone().multiplyScalar(4 * PX)));
+  setBox(b[1], tl, tu, tf, 8, 12, 4, H.clone().add(tu.clone().multiplyScalar(6 * PX)));
+  const piv = pivots(k, ax);
+  for (const [i, name, top] of [[2, "arm_r", 2], [3, "arm_l", 2], [4, "leg_r", 0], [5, "leg_l", 0]]) {
+    const d = toWorld(norm(k[name]), ax), [l, u, f] = limbAxes(d, ax, rollOf(k, name));
+    setBox(b[i], l, u, f, 4, 12, 4, piv[name].clone().add(d.clone().multiplyScalar((6 - top) * PX)));
+  }
+}
+const fig = makeFigure(1);
+const ghostPrev = makeFigure(0.22), ghostNext = makeFigure(0.22);
+
+// the gizmo works on a proxy: at the hips for the body, at the joint for a limb
+const proxy = new THREE.Object3D(); scene.add(proxy);
+const tcontrols = new TransformControls(camera, renderer.domElement);
+tcontrols.setSize(0.75);
+scene.add(tcontrols);
+let mode = "rotate";       // the gizmo: "rotate" or "translate"
+let dragStart = null;
+tcontrols.addEventListener("dragging-changed", e => {
+  controls.enabled = !e.value;
+  if (e.value) pushUndo();
+  else { syncProxy(); refreshPanel(); }
+});
+tcontrols.addEventListener("objectChange", () => {
+  const k = key();
+  if (part === "body") {
+    k.hips = proxy.position.toArray().map(r3);
+    const eu = new THREE.Euler().setFromQuaternion(proxy.quaternion, "YXZ");
+    k.lean = Math.round(deg(eu.x) * 10) / 10; k.yaw = Math.round(deg(eu.y) * 10) / 10;
+  } else if (mode === "translate") {
+    // off its socket
+    const ax = bodyAxes(k.lean, k.yaw);
+    setOff(k, part, toLocal(proxy.position.clone().sub(sockets(k.hips, ax)[part]), ax));
+  } else {
+    // the limb hangs along the proxy's -Y; its roll is how far the proxy's
+    // left is turned from the unrolled limb's
+    const ax = bodyAxes(k.lean, k.yaw);
+    const w = new THREE.Vector3(0, -1, 0).applyQuaternion(proxy.quaternion);
+    k[part] = toLocal(w, ax).map(v => Math.round(v * 10000) / 10000);
+    const [l0, , f0] = limbAxes(w, ax, 0), l = new THREE.Vector3(1, 0, 0).applyQuaternion(proxy.quaternion);
+    setRoll(k, part, deg(Math.atan2(-l.dot(f0), l.dot(l0))));
+  }
+  changed(false);
+});
+function syncProxy() {
+  if (!doc) return;
+  const k = key(), ax = bodyAxes(k.lean, k.yaw);
+  if (part === "body") {
+    proxy.position.set(...k.hips); proxy.quaternion.copy(bodyQuat(k.lean, k.yaw));
+    tcontrols.setMode(mode); tcontrols.setSpace("local");
+    tcontrols.showX = tcontrols.showY = true; tcontrols.showZ = mode === "translate";
+  } else {
+    const [l, u, f] = limbAxes(toWorld(norm(k[part]), ax), ax, rollOf(k, part));
+    proxy.position.copy(pivots(k, ax)[part]);
+    // moving a limb: arrows along the body's axes; turning: rings on its own
+    proxy.quaternion.setFromRotationMatrix(mode === "translate" ? new THREE.Matrix4().makeBasis(...ax) : new THREE.Matrix4().makeBasis(l, u, f));
+    tcontrols.setMode(mode); tcontrols.setSpace("local");
+    tcontrols.showX = tcontrols.showY = tcontrols.showZ = true;
+  }
+}
+const trailGeo = new THREE.BufferGeometry();
+const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ color: 0xf0b429, transparent: true, opacity: 0.6 }));
+const trailDots = new THREE.Points(trailGeo, new THREE.PointsMaterial({ color: 0xf0b429, size: 6, sizeAttenuation: false }));
+scene.add(trail, trailDots);
+
+// ---------------------------------------------------------------- the animation
+let doc = null;          // { name, about, frame, ground, format, keys: [...] }
+let sel = 0;             // selected key
+let part = "body";       // selected part
+let playing = false, t = 0;
+const key = () => doc.keys[sel];
+const ground = () => doc.ground || 0;
+const total = () => doc.keys.slice(1).reduce((s, k) => s + Math.max(k.dt, 0), 0);
+const keyTime = i => doc.keys.slice(1, i + 1).reduce((s, k) => s + Math.max(k.dt, 0), 0);
+function slerp(a, b, u) {
+  a = norm(a); b = norm(b);
+  const c = Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])), th = Math.acos(c);
+  if (th < 1e-4) return norm(a.map((v, i) => v + (b[i] - v) * u));
+  const s = Math.sin(th), ka = Math.sin((1 - u) * th) / s, kb = Math.sin(u * th) / s;
+  return norm(a.map((v, i) => v * ka + b[i] * kb));
+}
+function poseAt(time) {
+  const ks = doc.keys;
+  let acc = 0;
+  for (let i = 1; i < ks.length; i++) {
+    const dt = Math.max(ks[i].dt, 1e-6);
+    if (time <= acc + dt) {
+      let u = (time - acc) / dt; u = u * u * (3 - 2 * u);
+      const a = ks[i - 1], b = ks[i];
+      const p = { hips: a.hips.map((v, j) => v + (b.hips[j] - v) * u), lean: a.lean + (b.lean - a.lean) * u, yaw: a.yaw + (b.yaw - a.yaw) * u, off: {}, roll: {} };
+      for (const n in LIMBS) {
+        p[n] = slerp(a[n], b[n], u);
+        const oa = offOf(a, n), ob = offOf(b, n);
+        p.off[n] = oa.map((v, j) => v + (ob[j] - v) * u);
+        p.roll[n] = rollOf(a, n) + (rollOf(b, n) - rollOf(a, n)) * u;
+      }
+      return p;
+    }
+    acc += dt;
+  }
+  return ks[ks.length - 1];
+}
+// a key with hand and foot points (the game's older format) as limb
+// directions: each limb keeps its direction from its joint
+function toRig(k) {
+  if (k.arm_l) return k;
+  const ax = bodyAxes(k.lean, k.yaw), piv = sockets(k.hips, ax);
+  const out = { dt: k.dt, note: k.note || "", hips: k.hips, lean: k.lean, yaw: k.yaw };
+  for (const [n, end] of [["arm_l", "hand_l"], ["arm_r", "hand_r"], ["leg_l", "foot_l"], ["leg_r", "foot_r"]])
+    out[n] = toLocal(V(k[end]).sub(piv[n]).normalize(), ax).map(v => Math.round(v * 10000) / 10000);
+  if (k.seated) out.seated = true;
+  return out;
+}
+
+// undo
+const undoStack = [], redoStack = [];
+let lastPush = 0;
+function pushUndo() { undoStack.push(JSON.stringify(doc)); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; lastPush = performance.now(); }
+function markUndo() { if (performance.now() - lastPush > 800) pushUndo(); else lastPush = performance.now(); }
+function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify(doc)); doc = JSON.parse(undoStack.pop()); sel = Math.min(sel, doc.keys.length - 1); changed(); }
+function redo() { if (!redoStack.length) return; undoStack.push(JSON.stringify(doc)); doc = JSON.parse(redoStack.pop()); sel = Math.min(sel, doc.keys.length - 1); changed(); }
+function changed(full = true) {
+  try { localStorage.setItem("mech-animator-rig", JSON.stringify(doc)); } catch (e) { /* storage off */ }
+  if (full) { renderKeys(); refreshPanel(); syncProxy(); }
+  else refreshPanel(true);
+  updateTrail();
+}
+
+// ---------------------------------------------------------------- panel
+const keysEl = $("keys");
+function renderKeys() {
+  keysEl.innerHTML = "";
+  doc.keys.forEach((k, i) => {
+    const row = document.createElement("div");
+    row.className = "key" + (i === sel ? " sel" : "") + (k.seated ? " seated" : "");
+    const n = document.createElement("span"); n.className = "i"; n.textContent = i + 1;
+    const dt = document.createElement("input"); dt.type = "number"; dt.step = "0.05"; dt.min = "0"; dt.value = k.dt;
+    dt.disabled = i === 0; dt.title = i === 0 ? "the first key starts the animation" : "seconds from the key before";
+    const note = document.createElement("input"); note.type = "text"; note.value = k.note || ""; note.placeholder = "what happens here";
+    dt.onfocus = note.onfocus = () => { if (sel !== i) select(i); };
+    dt.oninput = () => { markUndo(); k.dt = Math.max(0, +dt.value || 0); changed(false); updateTime(); };
+    note.oninput = () => { markUndo(); k.note = note.value; changed(false); };
+    row.onclick = e => { if (e.target === row || e.target === n) select(i); };
+    row.append(n, dt, note);
+    keysEl.append(row);
+  });
+  const s = keysEl.children[sel]; if (s) s.scrollIntoView({ block: "nearest" });
+}
+function select(i) {
+  sel = Math.max(0, Math.min(doc.keys.length - 1, i));
+  playing = false; $("play").textContent = "▶ Play";
+  t = keyTime(sel);
+  renderKeys(); refreshPanel(); syncProxy();
+}
+const partBtns = $("partBtns");
+PARTS.forEach(([k, label], i) => {
+  const b = document.createElement("button"); b.textContent = label; b.title = "key " + (i + 1); b.dataset.p = k;
+  b.onclick = () => pickPart(k); partBtns.append(b);
+});
+function pickPart(p) { part = p; refreshPanel(); syncProxy(); }
+function setMode(m) { mode = m; refreshPanel(); syncProxy(); }
+$("modeMove").onclick = () => setMode("translate");
+$("modeRotate").onclick = () => setMode("rotate");
+// a limb's direction as Forward (swing ahead) and Out (swing away from the body)
+function limbAngles(d, side) {
+  const [x, y, z] = norm(d);
+  return { fwd: Math.round(deg(Math.atan2(z, -y))), out: Math.round(deg(Math.asin(Math.max(-1, Math.min(1, x * side))))) };
+}
+function limbDir(fwd, out, side) {
+  const p = rad(fwd), s = rad(out);
+  return [side * Math.sin(s), -Math.cos(s) * Math.cos(p), Math.cos(s) * Math.sin(p)].map(v => Math.round(v * 10000) / 10000);
+}
+function setVal(id, v) { if (document.activeElement !== $(id)) $(id).value = v; }
+function refreshPanel(quiet = false) {
+  const k = key();
+  $("keyNo").textContent = sel + 1;
+  for (const b of partBtns.children) b.classList.toggle("on", b.dataset.p === part);
+  $("bodyPanel").classList.toggle("hide", part !== "body");
+  $("limbPanel").classList.toggle("hide", part === "body");
+  $("modeMove").classList.toggle("on", mode === "translate");
+  $("modeRotate").classList.toggle("on", mode === "rotate");
+  if (part === "body") {
+    setVal("hx", r3(k.hips[0])); setVal("hy", r3(k.hips[1] - ground())); setVal("hz", r3(k.hips[2]));
+    setVal("lean", k.lean); setVal("leanN", k.lean); setVal("yaw", k.yaw); setVal("yawN", k.yaw);
+  } else {
+    const a = limbAngles(k[part], LIMBS[part].side);
+    setVal("fwd", a.fwd); setVal("fwdN", a.fwd); setVal("out", a.out); setVal("outN", a.out);
+    setVal("roll", rollOf(k, part)); setVal("rollN", rollOf(k, part));
+    const o = offOf(k, part);
+    setVal("ox", r3(o[0])); setVal("oy", r3(o[1])); setVal("oz", r3(o[2]));
+    const e = limbEnd(k, part);
+    $("limbInfo").textContent = `The ${LIMBS[part].end} is ${(e.y - ground()).toFixed(2)} m above the ground.`;
+  }
+  $("seated").checked = !!k.seated;
+  if (!quiet) updateTime();
+}
+function setHipsFromInputs() {
+  markUndo();
+  key().hips = [r3(+$("hx").value), r3(+$("hy").value + ground()), r3(+$("hz").value)];
+  changed(false); syncProxy();
+}
+for (const id of ["hx", "hy", "hz"]) $(id).oninput = setHipsFromInputs;
+for (const [a, b, field] of [["lean", "leanN", "lean"], ["yaw", "yawN", "yaw"]])
+  for (const el of [$(a), $(b)]) el.oninput = () => { markUndo(); key()[field] = +el.value; changed(false); syncProxy(); };
+for (const [a, b] of [["fwd", "fwdN"], ["out", "outN"]])
+  for (const el of [$(a), $(b)]) el.oninput = () => {
+    markUndo();
+    const ang = limbAngles(key()[part], LIMBS[part].side);
+    ang[a] = +el.value;
+    key()[part] = limbDir(ang.fwd, ang.out, LIMBS[part].side);
+    changed(false); syncProxy();
+  };
+for (const el of [$("roll"), $("rollN")]) el.oninput = () => { markUndo(); setRoll(key(), part, +el.value); changed(false); syncProxy(); };
+for (const id of ["ox", "oy", "oz"]) $(id).oninput = () => { markUndo(); setOff(key(), part, [+$("ox").value, +$("oy").value, +$("oz").value]); changed(false); syncProxy(); };
+$("resetOff").onclick = () => { pushUndo(); setOff(key(), part, [0, 0, 0]); changed(); };
+$("seated").onchange = () => { pushUndo(); if ($("seated").checked) key().seated = true; else delete key().seated; changed(); };
+
+$("addKey").onclick = () => {
+  pushUndo();
+  const k = JSON.parse(JSON.stringify(key()));
+  k.dt = sel === 0 ? 0.5 : (key().dt || 0.5); k.note = ""; delete k.seated;
+  doc.keys.splice(sel + 1, 0, k); select(sel + 1); changed();
+};
+$("delKey").onclick = () => {
+  if (doc.keys.length <= 2) return toast("an animation needs two keys");
+  pushUndo(); doc.keys.splice(sel, 1); doc.keys[0].dt = 0; select(Math.min(sel, doc.keys.length - 1)); changed();
+};
+function moveKey(d) {
+  const j = sel + d; if (j < 0 || j >= doc.keys.length) return;
+  pushUndo(); [doc.keys[sel], doc.keys[j]] = [doc.keys[j], doc.keys[sel]];
+  if (doc.keys[0].dt) { doc.keys[1].dt = doc.keys[1].dt || doc.keys[0].dt; doc.keys[0].dt = 0; }
+  select(j); changed();
+}
+$("upKey").onclick = () => moveKey(-1);
+$("downKey").onclick = () => moveKey(1);
+$("undo").onclick = undo;
+$("redo").onclick = redo;
+
+// playback
+function updateTime() {
+  const T = total();
+  $("scrub").max = Math.max(T, 0.001);
+  $("scrub").value = t;
+  $("time").textContent = t.toFixed(2) + " / " + T.toFixed(2) + " s";
+}
+$("play").onclick = () => togglePlay();
+function togglePlay() {
+  playing = !playing;
+  if (playing && $("reverse").checked && t <= 0) t = total();
+  if (playing && !$("reverse").checked && t >= total()) t = 0;
+  $("play").textContent = playing ? "⏸ Pause" : "▶ Play";
+}
+$("scrub").oninput = () => { playing = false; $("play").textContent = "▶ Play"; t = +$("scrub").value; updateTime(); };
+
+// view
+$("xray").onchange = () => { for (const m of mechMats) { m.transparent = $("xray").checked; m.opacity = $("xray").checked ? 0.3 : 1; m.depthWrite = !$("xray").checked; m.needsUpdate = true; } };
+$("hatch").onchange = () => { hatchAngle = $("hatch").checked ? -110 : 0; placeMech(); };
+$("focus").onclick = focusFigure;
+function focusFigure() {
+  const h = V(poseAt(t).hips);
+  const off = camera.position.clone().sub(controls.target).setLength(5);
+  controls.target.copy(h); camera.position.copy(h).add(off); controls.update();
+}
+function updateTrail() { trailGeo.setFromPoints(doc.keys.map(k => V(k.hips))); }
+
+// ---------------------------------------------------------------- files
+let toastTimer = 0;
+function toast(msg) { const el = $("toast"); el.textContent = msg; el.classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("on"), 2800); }
+function load(d, name) {
+  const converted = d.keys.some(k => !k.arm_l);
+  doc = Object.assign({}, d, { format: "rig", keys: d.keys.map(toRig) });
+  if (!doc.ground) doc.ground = spec.gait.kneel_drop;
+  if (doc.keys[0]) doc.keys[0].dt = 0;
+  $("name").value = name || doc.name || "draft";
+  undoStack.length = redoStack.length = 0;
+  sel = 0; t = 0; playing = false;
+  renderKeys(); refreshPanel(); syncProxy(); updateTrail();
+  try { localStorage.setItem("mech-animator-rig", JSON.stringify(doc)); } catch (e) { /* storage off */ }
+  if (converted) toast("limbs set from the hand and foot points (their reach may differ a little)");
+}
+async function refreshOpen() {
+  const s = $("open");
+  s.innerHTML = '<option value="">Open…</option>';
+  for (const [kind, label] of [["animations", "Game"], ["drafts", "Drafts"]]) {
+    try {
+      const names = await (await fetch("/" + kind)).json();
+      if (!names.length) continue;
+      const g = document.createElement("optgroup"); g.label = label;
+      for (const n of names) { const o = document.createElement("option"); o.value = kind + "/" + n; o.textContent = n; g.append(o); }
+      s.append(g);
+    } catch (e) { /* not served by serve.py */ }
+  }
+}
+$("open").onchange = async () => {
+  const v = $("open").value; $("open").value = "";
+  if (!v) return;
+  const [kind, n] = v.split("/");
+  const url = kind === "animations" ? "/mech/animations/" + n + ".json" : "/tools/animator/drafts/" + n + ".json";
+  try {
+    const d = await (await fetch(url, { cache: "no-store" })).json();
+    load(d, kind === "animations" ? n + "-draft" : n);
+  } catch (e) { toast("could not open " + url); }
+};
+function exportDoc() {
+  const name = $("name").value.trim() || "draft";
+  return Object.assign({}, doc, { name, format: "rig",
+    frame: "the mech frame at rest (+X left, +Y up, +Z forward, meters), with the mech kneeling and its turret ahead; limbs are directions in the body frame (left, up, forward)" });
+}
+async function save() {
+  const name = ($("name").value.trim() || "draft").replace(/[^A-Za-z0-9_-]/g, "_");
+  $("name").value = name;
+  try {
+    const r = await fetch("/drafts/" + name, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(exportDoc()) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    toast("saved " + j.saved); refreshOpen();
+  } catch (e) { toast("not saved (" + e.message + "): run tools/animator/serve.py, or Download"); }
+}
+$("save").onclick = save;
+$("download").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(exportDoc(), null, 1)], { type: "application/json" }));
+  a.download = ($("name").value.trim() || "draft") + ".json"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+
+// ---------------------------------------------------------------- picking
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+let downAt = null;
+renderer.domElement.addEventListener("pointerdown", e => { downAt = tcontrols.axis ? null : [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener("pointerup", e => {
+  if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4 || tcontrols.dragging) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  if (e.shiftKey) {
+    const hits = ray.intersectObjects(mechMeshes, false).filter(h => {
+      const mats = h.object.material; const m = Array.isArray(mats) ? mats[h.face.materialIndex] : mats;
+      return m.visible !== false;
+    });
+    let p = hits.length ? hits[0].point : ray.ray.intersectPlane(new THREE.Plane(UP, -ground()), new THREE.Vector3());
+    if (!p) return;
+    const on = hits.length ? hits[0].object.userData.part : "the ground";
+    pushUndo();
+    const k = key(), ax = bodyAxes(k.lean, k.yaw);
+    if (part === "body") {
+      // stand there
+      k.hips = [r3(p.x), r3(p.y + HIP_H), r3(p.z)];
+      toast("standing on " + on);
+    } else if (mode === "translate" && !(e.ctrlKey || e.metaKey)) {
+      // move the limb off its socket so its end lands there
+      const d = p.clone().sub(limbEnd(k, part)), o = offOf(k, part);
+      setOff(k, part, toLocal(d, ax).map((v, i) => v + o[i]));
+      toast("moved the " + PARTS.find(q => q[0] === part)[1] + ": its " + LIMBS[part].end + " is on " + on);
+    } else if (e.ctrlKey || e.metaKey) {
+      // move the body so this limb's end lands there
+      const d = p.clone().sub(limbEnd(k, part));
+      k.hips = k.hips.map((v, i) => r3(v + d.getComponent(i)));
+      toast("moved the body: the " + LIMBS[part].end + " is on " + on);
+    } else {
+      // aim the limb there
+      const piv = pivots(k, ax)[part], w = p.clone().sub(piv), dist = w.length();
+      k[part] = toLocal(w.normalize(), ax).map(v => Math.round(v * 10000) / 10000);
+      const short = dist - LIMBS[part].len;
+      toast(short > 0.05 ? `aimed at ${on}: ${short.toFixed(2)} m out of reach (Ctrl+Shift+click moves the body there)` : "aimed at " + on);
+    }
+    changed(); syncProxy();
+    return;
+  }
+  const hit = ray.intersectObjects(fig.boxes, false);
+  if (hit.length) pickPart(BOX_PART[hit[0].object.userData.box]);
+});
+
+// keys
+addEventListener("keydown", e => {
+  const a = document.activeElement;
+  const typing = /INPUT|SELECT|TEXTAREA/.test(a.tagName) && a.type !== "checkbox" && a.type !== "range";
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { if (typing) return; e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (e.key === " ") { e.preventDefault(); togglePlay(); }
+  else if (e.key === "ArrowLeft") select(sel - 1);
+  else if (e.key === "ArrowRight") select(sel + 1);
+  else if (k === "n") $("addKey").click();
+  else if (e.key === "Delete") $("delKey").click();
+  else if (k === "f") focusFigure();
+  else if (k === "g") setMode("translate");
+  else if (k === "r") setMode("rotate");
+  else if (e.key >= "1" && e.key <= "5") pickPart(PARTS[+e.key - 1][0]);
+});
+
+// ---------------------------------------------------------------- loop
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize);
+const clock = new THREE.Clock();
+const SEL_GLOW = new THREE.Color(0x553d00), NO_GLOW = new THREE.Color(0x000000);
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  if (!doc) return;                     // still loading
+  if (playing) {
+    const dir = $("reverse").checked ? -1 : 1, T = total();
+    t += dir * dt * +$("speed").value;
+    if (t > T || t < 0) {
+      if ($("loop").checked) t = dir > 0 ? 0 : T;
+      else { t = Math.min(Math.max(t, 0), T); playing = false; $("play").textContent = "▶ Play"; }
+    }
+    updateTime();
+  }
+  // editing shows the selected key; playing or scrubbing shows the time
+  const editing = !playing && Math.abs(t - keyTime(sel)) < 1e-6;
+  poseFigure(fig, editing ? key() : poseAt(t));
+  fig.boxes.forEach((b, i) => b.material.emissive.copy(editing && BOX_PART[i] === part ? SEL_GLOW : NO_GLOW));
+  const onion = $("onion").checked && editing;
+  ghostPrev.g.visible = onion && sel > 0;
+  ghostNext.g.visible = onion && sel < doc.keys.length - 1;
+  if (ghostPrev.g.visible) poseFigure(ghostPrev, doc.keys[sel - 1]);
+  if (ghostNext.g.visible) poseFigure(ghostNext, doc.keys[sel + 1]);
+  if (editing) { if (tcontrols.object !== proxy) { tcontrols.attach(proxy); syncProxy(); } }
+  else if (tcontrols.object) tcontrols.detach();
+  trail.visible = trailDots.visible = $("trail").checked;
+  renderer.render(scene, camera);
+});
+
+// ---------------------------------------------------------------- start
+placeMech();
+const grid = new THREE.GridHelper(60, 60, 0x3a3f48, 0x262a31);
+scene.add(grid);
+async function start() {
+  let d = null, name = null;
+  try { d = JSON.parse(localStorage.getItem("mech-animator-rig") || "null"); } catch (e) { d = null; }
+  if (!d) {   // work from the earlier editor (hand and foot points)
+    try { d = JSON.parse(localStorage.getItem("mech-animator") || "null"); } catch (e) { d = null; }
+  }
+  if (!d) {
+    try { d = await (await fetch("/mech/animations/board.json", { cache: "no-store" })).json(); name = "board-draft"; }
+    catch (e) { d = null; }
+  }
+  if (!d) {
+    const G = spec.gait.kneel_drop, st = (z, dt) => ({ dt, note: "", hips: [0, G + HIP_H, z], lean: 0, yaw: 180,
+      arm_l: [0, -1, 0], arm_r: [0, -1, 0], leg_l: [0, -1, 0], leg_r: [0, -1, 0] });
+    d = { name: "draft", ground: G, keys: [st(5, 0), st(4, 1)] };
+  }
+  load(d, name || d.name);
+  grid.position.y = ground();
+  const h = V(doc.keys[0].hips);
+  controls.target.copy(h); camera.position.set(h.x - 7, h.y + 3, h.z + 6); controls.update();
+  refreshOpen();
+}
+resize();
+start();
+</script>
+</body>
+</html>

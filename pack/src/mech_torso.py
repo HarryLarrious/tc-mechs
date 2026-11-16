@@ -397,6 +397,22 @@ def _light_gun():
     return e
 
 
+# Where each gun's rounds leave it (design units, the mech frame at rest; the
+# left guns, the right ones are mirrored), and the elevation joint that aims
+# it. They fire along +Z of that joint's segment.
+HEAVY_MUZZLE = (HBARREL[0], HBARREL[1], HBARREL[2] + 1.85)
+LIGHT_MUZZLE = (LGUN[0], LGUN[1], 1.08)
+
+
+def muzzles() -> list[tuple[str, str, tuple]]:
+    """(gun kind, elevation joint, muzzle point) for every gun."""
+    out = []
+    for t, s in (("l", 1), ("r", -1)):
+        out.append(("heavy", f"elev_h{t}", (s * HEAVY_MUZZLE[0], HEAVY_MUZZLE[1], HEAVY_MUZZLE[2])))
+        out.append(("light", f"elev_l{t}", (s * LIGHT_MUZZLE[0], LIGHT_MUZZLE[1], LIGHT_MUZZLE[2])))
+    return out
+
+
 def torso_parts():
     """Returns (torso parts, gun parts, segments, joints)."""
     torso: list[Part] = []

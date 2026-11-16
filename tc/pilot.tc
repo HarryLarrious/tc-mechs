@@ -174,6 +174,8 @@ function pilotRelease(m: num) {
     global mBoard[m] = 0;
     global mBoardT[m] = 0;
     global mHatchTo[m] = 0;
+    global mTrigH[m] = 0;
+    global mTrigL[m] = 0;
     global gWantSpeed[m] = 0;
     global gWantTurn[m] = 0;
     global gWalking[m] = 1;
@@ -321,7 +323,7 @@ function pilotBoardTick(m: num): num {
         if (global gKneel[m] == 0) {
             global mBoard[m] = 0;
             select playersByName(global mPilot[m]);
-            selected.sendMessage(s"<gray>Piloting mech %var(m). <yellow>W/S</yellow> walk, <yellow>A/D</yellow> turn, look to aim, <yellow>F</yellow> get out.");
+            selected.sendMessage(s"<gray>Piloting mech %var(m). <yellow>W/S</yellow> walk, <yellow>A/D</yellow> turn, look to aim, <yellow>right click</yellow> (hold) cannons, <yellow>left click</yellow> machine guns, <yellow>F</yellow> get out.");
             select reset;
         }
     } else if (line state == 5) {
@@ -382,7 +384,8 @@ function ease(t: num): num {
     return line c * line c * (3 - 2 * line c);
 }
 
-/** The boarding timeline at tick t, interpolated (17 numbers). */
+/** The boarding timeline at tick t, interpolated (33 numbers: hips, lean,
+ * yaw, then per limb its joint, end and roll; see pilotBoardPath). */
 function pilotPathAt(t: num): list {
     line x = num.clamp(t * global pRate / 20, 0, global pPath.len() - 1);
     line i = num.min(num.floor(line x), global pPath.len() - 2);
@@ -390,7 +393,7 @@ function pilotPathAt(t: num): list {
     line a = global pPath[line i + 1] as list;
     line b = global pPath[line i + 2] as list;
     line out = [];
-    repeat (line k to 17) {
+    repeat (line k to 33) {
         line p = line a[line k] as num;
         line out.append(line p + ((line b[line k] as num) - line p) * line u);
     }
@@ -443,14 +446,15 @@ function pilotRender(m: num, W: list, T: list, o: vec) {
             line swing = 0;
         }
         line H = line feet + vec(0, 12 * line px, 0);
-        line neck = line H + line tu * (12 * line px);
+        line sh = line H + line tu * (10 * line px);
         line legL = line tu * (0 - num.cos(line swing)) + line tf * num.sin(line swing);
         line legR = line tu * (0 - num.cos(line swing)) - line tf * num.sin(line swing);
-        line fl = line H + line tl * (2 * line px) + line legL * (12 * line px);
-        line fr = line H - line tl * (2 * line px) + line legR * (12 * line px);
-        line hl = line neck - line tu * (2 * line px) + line tl * (6 * line px) + line legR * (10 * line px);
-        line hr = line neck - line tu * (2 * line px) - line tl * (6 * line px) + line legL * (10 * line px);
-        pilotFigure(m, line H, line tl, line tu, line tf, line fl, line fr, line hl, line hr, line look);
+        line jl = line H + line tl * (2 * line px);
+        line jr = line H - line tl * (2 * line px);
+        line sl = line sh + line tl * (6 * line px);
+        line sr = line sh - line tl * (6 * line px);
+        line limbs = [[line jl, line jl + line legL * (12 * line px), 0], [line jr, line jr + line legR * (12 * line px), 0], [line sl, line sl + line legR * (10 * line px), 0], [line sr, line sr + line legL * (10 * line px), 0]];
+        pilotFigure(m, line H, line tl, line tu, line tf, line limbs, line look);
         return;
     }
     // the timeline: climbing in or out, else seated (its last sample)
@@ -468,7 +472,13 @@ function pilotRender(m: num, W: list, T: list, o: vec) {
     line tl = rotApply(line tw, vec(line cy, 0, 0 - line sy));
     line tu = rotApply(line tw, vec(num.sin(line a) * line sy, num.cos(line a), num.sin(line a) * line cy));
     line tf = rotApply(line tw, vec(num.cos(line a) * line sy, 0 - num.sin(line a), num.cos(line a) * line cy));
-    pilotFigure(m, pathPoint(line row, 1, line tw), line tl, line tu, line tf, pathPoint(line row, 6, line tw), pathPoint(line row, 9, line tw), pathPoint(line row, 12, line tw), pathPoint(line row, 15, line tw), line look);
+    // each limb: its joint, its end and its roll
+    line limbs = [];
+    repeat (line i to 4) {
+        line base = 6 + (line i - 1) * 7;
+        line limbs.append([pathPoint(line row, line base, line tw), pathPoint(line row, line base + 3, line tw), line row[line base + 6]]);
+    }
+    pilotFigure(m, pathPoint(line row, 1, line tw), line tl, line tu, line tf, line limbs, line look);
 }
 
 /** Sets display `id` to a part of size (sx, sy, sz) skin pixels with axes
@@ -488,8 +498,9 @@ function pilotPart(id: str, l: vec, u: vec, f: vec, sx: num, sy: num, sz: num, c
 /** Poses a limb from its pivot `from` to its end `target` (world): `rest` pixels
  * long at rest, stretched a little to reach (0.85 to 1.2), with its pivot
  * `top` pixels below its top. It hangs along the line with its front turned
- * the least way from straight down, in the body frame (tl, tu, tf). */
-function pilotLimb(id: str, from: vec, target: vec, rest: num, top: num, tl: vec, tu: vec, tf: vec, at: vec) {
+ * the least way from straight down, in the body frame (tl, tu, tf), then
+ * twisted by `roll` degrees about its length. */
+function pilotLimb(id: str, from: vec, target: vec, rest: num, top: num, roll: num, tl: vec, tu: vec, tf: vec, at: vec) {
     line px = global pPx;
     line d = target - from;
     line len = num.max(d.len(), 0.01);
@@ -502,17 +513,23 @@ function pilotLimb(id: str, from: vec, target: vec, rest: num, top: num, tl: vec
     line z = line b.dot(tf);
     line q = num.max(1 - line y, 0.02);
     line fl = vec(0 - line x * line z / line q, line z, 1 - line z * line z / line q).setLength(1);
-    line f = (tl * line fl.x + tu * line fl.y + tf * line fl.z).setLength(1);
+    line f0 = (tl * line fl.x + tu * line fl.y + tf * line fl.z).setLength(1);
     line u: vec = line b * -1;
-    line l: vec = line u.cross(line f);
+    line l0: vec = line u.cross(line f0);
+    // the roll: about the limb's up (toward its joint)
+    line c = num.cos(roll);
+    line sn = num.sin(roll);
+    line l: vec = line l0 * line c - line f0 * line sn;
+    line f: vec = line f0 * line c + line l0 * line sn;
     pilotPart(id, line l, line u, line f, 4, 12 * line k, 4, from + line b * ((6 - top) * line px * line k), at);
 }
 
 /** Draws the body of mech m's pilot in a figure pose (world): hips H, body
- * axes (tl left, tu up, tf forward), feet and hands; the head looks along
- * `look` within what a neck allows. Puts the seat so the pilot's eye is at
- * the head's center. */
-function pilotFigure(m: num, H: vec, tl: vec, tu: vec, tf: vec, fl: vec, fr: vec, hl: vec, hr: vec, look: vec) {
+ * axes (tl left, tu up, tf forward), and per limb (left leg, right leg, left
+ * arm, right arm) [its joint, its end (sole or hand), its roll]; the head
+ * looks along `look` within what a neck allows. Puts the seat so the pilot's
+ * eye is at the head's center. */
+function pilotFigure(m: num, H: vec, tl: vec, tu: vec, tf: vec, limbs: list, look: vec) {
     line px = global pPx;
     line neck = H + tu * (12 * line px);
     // head, in the body frame
@@ -538,11 +555,18 @@ function pilotFigure(m: num, H: vec, tl: vec, tu: vec, tf: vec, fl: vec, fr: vec
     line at = line headC - vec(0, 1.03 - 0.01, 0);
     pilotPart(line ids[1], line headL, line headU, line headF, 8, 8, 8, line headC, line at);
     pilotPart(line ids[2], tl, tu, tf, 8, 12, 4, H + tu * (6 * line px), line at);
-    line sh = line neck - tu * (2 * line px);
-    pilotLimb(line ids[3], line sh - tl * (6 * line px), hr, 10, 2, tl, tu, tf, line at);
-    pilotLimb(line ids[4], line sh + tl * (6 * line px), hl, 10, 2, tl, tu, tf, line at);
-    pilotLimb(line ids[5], H - tl * (2 * line px), fr, 12, 0, tl, tu, tf, line at);
-    pilotLimb(line ids[6], H + tl * (2 * line px), fl, 12, 0, tl, tu, tf, line at);
+    // displays 3 to 6: right arm, left arm, right leg, left leg
+    line order = [4, 3, 2, 1];
+    repeat (line i to 4) {
+        line lb = limbs[line order[line i] as num] as list;
+        line rest = 12;
+        line top = 0;
+        if (line i <= 2) {
+            line rest = 10;
+            line top = 2;
+        }
+        pilotLimb(line ids[line i + 2], line lb[1] as vec, line lb[2] as vec, line rest, line top, line lb[3] as num, tl, tu, tf, line at);
+    }
 }
 
 playerevent dismount {
@@ -592,18 +616,19 @@ function pilotInput(m: num): list {
 }
 
 /** The pilot's action bar: speed, heading, how far the turret lags the aim,
- * the last landing's impact speed and plot CPU. */
+ * the last landing's impact speed, the cannons' spin and plot CPU. */
 function pilotHud(m: num, aimAt: num) {
     line kmh = num.round(num.abs(global gSpeed[m]) * 3.6);
     line heading = num.round(num.wrap(global mYaw[m], 0, 360));
     line lag = num.round(num.abs(wrapDeg(aimAt - global gAim[m])));
     line impact = num.round(global gImpact[m] * 10) / 10;
     line cpu = num.round(game.cpuUsage);
+    line spin = num.round(global mSpinV[m] / spinMax() * 100);
     line state = "";
     if (global gFalling[m] == 1) {
         line state = "   <red><b>FALLING</b></red>";
     }
     select playersByName(global mPilot[m]);
-    selected.sendActionBar(s"<white><b>%var(kmh)</b></white> <gray>km/h   heading</gray> <white>%var(heading)°</white>   <gray>turret lag</gray> <white>%var(lag)°</white>   <gray>last landing</gray> <white>%var(impact) m/s</white>   <gray>CPU %var(cpu)%</gray>%var(state)");
+    selected.sendActionBar(s"<white><b>%var(kmh)</b></white> <gray>km/h   heading</gray> <white>%var(heading)°</white>   <gray>turret lag</gray> <white>%var(lag)°</white>   <gray>last landing</gray> <white>%var(impact) m/s</white>   <gray>cannons</gray> <white>%var(spin)%</white>   <gray>CPU %var(cpu)%</gray>%var(state)");
     select reset;
 }

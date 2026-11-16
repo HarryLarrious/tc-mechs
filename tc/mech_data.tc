@@ -171,6 +171,13 @@ function mechHatchCenter(): vec {
     return vec(0, 10.248, -1.428);
 }
 
+/** The guns: [kind (heavy or light), the elevation joint that aims it, its
+ * muzzle in the mech frame at rest (m)]. Rounds leave along +Z of that
+ * joint's segment. */
+function mechMuzzles(): list {
+    return [["heavy", "elev_hl", vec(2.73, 9.24, 5.355)], ["light", "elev_ll", vec(0.945, 10.668, 2.268)], ["heavy", "elev_hr", vec(-2.73, 9.24, 5.355)], ["light", "elev_lr", vec(-0.945, 10.668, 2.268)]];
+}
+
 /** The pilot's seat: the top center of the chair's seat in the mech frame
  * at rest (it turns with the torso). A rider's eyes are 1.03 m above it. */
 function mechCockpitSeat(): vec {
